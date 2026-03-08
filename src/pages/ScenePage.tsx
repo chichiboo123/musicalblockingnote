@@ -11,6 +11,7 @@ import PersonIcon from "@/components/PersonIcon";
 import BlockingContextMenu from "@/components/BlockingContextMenu";
 import { useBlockingContext } from "@/contexts/BlockingContext";
 import { exportAsJPG } from "@/utils/exportUtils";
+import dancingIcon from "@/assets/dancing-icon.png";
 import type { BlockingElement, SceneSection, ContextMenuState } from "@/types/blocking";
 import { CHARACTER_COLORS as COLORS } from "@/types/blocking";
 
@@ -178,13 +179,16 @@ const ScenePage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card sticky top-0 z-30">
+      <header className="glass-header sticky top-0 z-30">
         <div className="container mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
             <ArrowLeft className="w-4 h-4 mr-1" /> 돌아가기
           </Button>
           <div className="h-5 w-px bg-border" />
-          <span className="text-sm font-semibold text-foreground">🎬 장면별 동선</span>
+          <div className="flex items-center gap-2">
+            <img src={dancingIcon} alt="" className="w-5 h-5" />
+            <span className="text-sm font-semibold text-foreground">장면별 동선</span>
+          </div>
           <div className="flex-1" />
           <div className="flex gap-1.5 flex-wrap">
             <Button variant="outline" size="sm" onClick={handleDownloadJSON}>
@@ -212,7 +216,7 @@ const ScenePage: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[240px_1fr] gap-6">
+        <div className="grid lg:grid-cols-[220px_1fr] gap-6">
           {/* Character palette */}
           <aside>
             <div className="section-card">
@@ -224,26 +228,26 @@ const ScenePage: React.FC = () => {
                 {characterList.map((name, i) => (
                   <DraggableElement key={name} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
                     <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
-                    <span className="text-xs" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
+                    <span className="text-xs font-medium" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
                   </DraggableElement>
                 ))}
               </div>
             </div>
           </aside>
 
-          {/* Scenes */}
-          <div className="space-y-6">
+          {/* Scenes - compact grid layout */}
+          <div className="grid sm:grid-cols-2 gap-4">
             {sceneSections.map((section, index) => (
-              <div key={section.id} ref={sectionRefs.current[index]} className="section-card">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold text-foreground">장면 {section.id}</h3>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => handleExportJPG(index)}>
-                      <Image className="w-3.5 h-3.5" />
+              <div key={section.id} ref={sectionRefs.current[index]} className="section-card p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-bold text-foreground">장면 {section.id}</h3>
+                  <div className="flex gap-0.5">
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleExportJPG(index)}>
+                      <Image className="w-3 h-3" />
                     </Button>
                     {sceneSections.length > 1 && (
-                      <Button variant="ghost" size="sm" onClick={() => handleDeleteSection(index)}>
-                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleDeleteSection(index)}>
+                        <Trash2 className="w-3 h-3 text-destructive" />
                       </Button>
                     )}
                   </div>
@@ -251,8 +255,8 @@ const ScenePage: React.FC = () => {
                 <Textarea
                   value={section.script}
                   onChange={(e) => handleScriptChange(index, e.target.value)}
-                  placeholder="장면 스크립트를 입력하세요..."
-                  className="mb-3 min-h-[60px] text-sm"
+                  placeholder="스크립트..."
+                  className="mb-2 min-h-[40px] text-xs resize-none"
                 />
                 <StageGrid
                   sectionIndex={index}
@@ -261,12 +265,13 @@ const ScenePage: React.FC = () => {
                   onElementMove={handleElementMove}
                   onElementRemove={handleElementRemove}
                   onContextMenu={setContextMenu}
+                  compact
                 />
               </div>
             ))}
 
-            <Button variant="outline" onClick={handleAddSection} className="w-full">
-              <Plus className="w-4 h-4 mr-1" /> 장면 추가
+            <Button variant="outline" onClick={handleAddSection} className="h-full min-h-[200px] border-dashed border-2">
+              <Plus className="w-5 h-5 mr-1" /> 장면 추가
             </Button>
           </div>
         </div>

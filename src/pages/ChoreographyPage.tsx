@@ -13,13 +13,14 @@ import BlockingContextMenu from "@/components/BlockingContextMenu";
 import { recommendedPaths } from "@/components/RecommendedPaths";
 import { useBlockingContext } from "@/contexts/BlockingContext";
 import { exportAsJPG, exportAsPDF } from "@/utils/exportUtils";
-import type { BlockingElement, VerseSection, CustomPattern, ContextMenuState, CHARACTER_COLORS } from "@/types/blocking";
+import dancingIcon from "@/assets/dancing-icon.png";
+import type { BlockingElement, VerseSection, CustomPattern, ContextMenuState } from "@/types/blocking";
 import { CHARACTER_COLORS as COLORS } from "@/types/blocking";
 
 const ChoreographyPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { exportRef, addToHistory, undo, redo, undoHistory, redoHistory } = useBlockingContext();
+  const { addToHistory, undo, redo, undoHistory, redoHistory } = useBlockingContext();
 
   const [title, setTitle] = useState("");
   const [characters, setCharacters] = useState("");
@@ -85,6 +86,22 @@ const ChoreographyPage: React.FC = () => {
       saveState();
     },
     [saveState]
+  );
+
+  const handleElementResize = useCallback(
+    (elementId: string, size: { width: number; height: number }, sectionIndex: number) => {
+      setVerseSections((prev) => {
+        const updated = [...prev];
+        updated[sectionIndex] = {
+          ...updated[sectionIndex],
+          blockingElements: updated[sectionIndex].blockingElements.map((el) =>
+            el.id === elementId ? { ...el, size } : el
+          ),
+        };
+        return updated;
+      });
+    },
+    []
   );
 
   const handleAddSection = () => {
@@ -205,21 +222,22 @@ const ChoreographyPage: React.FC = () => {
     }
   };
 
-  // Ensure refs array matches sections
   while (sectionRefs.current.length < verseSections.length) {
     sectionRefs.current.push(React.createRef<HTMLDivElement>());
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card sticky top-0 z-30">
+      <header className="glass-header sticky top-0 z-30">
         <div className="container mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
             <ArrowLeft className="w-4 h-4 mr-1" /> 돌아가기
           </Button>
           <div className="h-5 w-px bg-border" />
-          <span className="text-sm font-semibold text-foreground">🎵 뮤지컬 안무 동선</span>
+          <div className="flex items-center gap-2">
+            <img src={dancingIcon} alt="" className="w-5 h-5" />
+            <span className="text-sm font-semibold text-foreground">뮤지컬 안무 동선</span>
+          </div>
           <div className="flex-1" />
           <div className="flex gap-1.5 flex-wrap">
             <Button variant="outline" size="sm" onClick={handleDownloadJSON}>
@@ -239,7 +257,6 @@ const ChoreographyPage: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 py-6">
-        {/* Project info */}
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">프로젝트 제목</label>
@@ -251,10 +268,8 @@ const ChoreographyPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[280px_1fr] gap-6">
-          {/* Sidebar - Palette */}
-          <aside className="space-y-5">
-            {/* Characters */}
+        <div className="grid lg:grid-cols-[260px_1fr] gap-6">
+          <aside className="space-y-4">
             <div className="section-card">
               <h3 className="text-sm font-semibold text-foreground mb-2">캐릭터</h3>
               {characterList.length === 0 && (
@@ -262,27 +277,20 @@ const ChoreographyPage: React.FC = () => {
               )}
               <div className="flex flex-wrap gap-2">
                 {characterList.map((name, i) => (
-                  <DraggableElement
-                    key={name}
-                    id={`char-${i}`}
-                    type="character"
-                    color={COLORS[i % COLORS.length]}
-                    label={name}
-                  >
+                  <DraggableElement key={name} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
                     <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
-                    <span className="text-xs" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
+                    <span className="text-xs font-medium" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
                   </DraggableElement>
                 ))}
               </div>
             </div>
 
-            {/* Recommended Paths */}
             <div className="section-card">
               <h3 className="text-sm font-semibold text-foreground mb-2">권장 경로</h3>
               <div className="grid grid-cols-2 gap-2">
                 {recommendedPaths.map((path) => (
                   <DraggableElement key={path.id} id={path.id} type="path" svg={path.svg}>
-                    <div className="w-10 h-10 border border-border rounded bg-card p-0.5">
+                    <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
                       <div dangerouslySetInnerHTML={{ __html: path.svg }} className="w-full h-full" />
                     </div>
                     <span className="text-[10px] text-muted-foreground">{path.name}</span>
@@ -291,7 +299,6 @@ const ChoreographyPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Custom Patterns */}
             <div className="section-card">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-foreground">사용자 패턴</h3>
@@ -303,7 +310,7 @@ const ChoreographyPage: React.FC = () => {
               <div className="flex flex-wrap gap-2 mt-2">
                 {customPatterns.map((p) => (
                   <DraggableElement key={p.id} id={p.id} type="custom" svg={p.svg}>
-                    <div className="w-10 h-10 border border-border rounded bg-card p-0.5">
+                    <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
                       <div dangerouslySetInnerHTML={{ __html: p.svg }} className="w-full h-full" />
                     </div>
                   </DraggableElement>
@@ -312,7 +319,6 @@ const ChoreographyPage: React.FC = () => {
             </div>
           </aside>
 
-          {/* Main content - Sections */}
           <div className="space-y-6">
             {verseSections.map((section, index) => (
               <div key={section.id} ref={sectionRefs.current[index]} className="section-card">
@@ -341,6 +347,7 @@ const ChoreographyPage: React.FC = () => {
                   onElementDrop={handleElementDrop}
                   onElementMove={handleElementMove}
                   onElementRemove={handleElementRemove}
+                  onElementResize={handleElementResize}
                   onContextMenu={setContextMenu}
                   isChoreography
                 />
