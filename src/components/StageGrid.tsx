@@ -7,8 +7,10 @@ interface StageGridProps {
   onElementDrop: (element: BlockingElement, sectionIndex: number) => void;
   onElementMove: (elementId: string, position: { x: number; y: number }, sectionIndex: number) => void;
   onElementRemove: (elementId: string, sectionIndex: number) => void;
+  onElementResize?: (elementId: string, size: { width: number; height: number }, sectionIndex: number) => void;
   onContextMenu?: (state: ContextMenuState) => void;
   isChoreography?: boolean;
+  compact?: boolean;
 }
 
 const STAGE_LABELS = [
@@ -29,12 +31,16 @@ const StageGrid: React.FC<StageGridProps> = ({
   onElementDrop,
   onElementMove,
   onElementRemove,
+  onElementResize,
   onContextMenu,
   isChoreography = false,
+  compact = false,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [resizingId, setResizingId] = useState<string | null>(null);
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -94,18 +100,38 @@ const StageGrid: React.FC<StageGridProps> = ({
     setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
 
+  const handleResizeMouseDown = (e: React.MouseEvent, elementId: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const el = elements.find((el) => el.id === elementId);
+    if (!el) return;
+    setResizingId(elementId);
+    setResizeStart({ x: e.clientX, y: e.clientY, w: el.size?.width || 80, h: el.size?.height || 80 });
+  };
+
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
+      if (resizingId && onElementResize) {
+        const dx = e.clientX - resizeStart.x;
+        const dy = e.clientY - resizeStart.y;
+        const newW = Math.max(30, resizeStart.w + dx);
+        const newH = Math.max(30, resizeStart.h + dy);
+        onElementResize(resizingId, { width: newW, height: newH }, sectionIndex);
+        return;
+      }
       if (!draggingId) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left - dragOffset.x;
       const y = e.clientY - rect.top - dragOffset.y;
       onElementMove(draggingId, { x, y }, sectionIndex);
     },
-    [draggingId, dragOffset, onElementMove, sectionIndex]
+    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize]
   );
 
-  const handleMouseUp = () => setDraggingId(null);
+  const handleMouseUp = () => {
+    setDraggingId(null);
+    setResizingId(null);
+  };
 
   const handleContextMenu = (e: React.MouseEvent, elementId: string) => {
     e.preventDefault();
@@ -120,9 +146,9 @@ const StageGrid: React.FC<StageGridProps> = ({
 
   return (
     <div
-      className={`stage-grid relative w-full aspect-[3/2] select-none overflow-hidden ${
-        isDragOver ? "ring-2 ring-primary/50 bg-primary/5" : ""
-      }`}
+      className={`stage-grid relative w-full select-none overflow-hidden ${
+        compact ? "aspect-[3/2] max-w-[360px]" : "aspect-[3/2]"
+      } ${isDragOver ? "ring-2 ring-primary/50 bg-primary/5" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -137,7 +163,7 @@ const StageGrid: React.FC<StageGridProps> = ({
             key={i}
             className="stage-grid-line border flex items-center justify-center"
           >
-            <span className="stage-label text-[10px] opacity-60" title={LABEL_FULL[Math.floor(i / 3)][i % 3]}>
+            <span className="stage-label text-[10px] opacity-50" title={LABEL_FULL[Math.floor(i / 3)][i % 3]}>
               {label}
             </span>
           </div>
@@ -145,45 +171,56 @@ const StageGrid: React.FC<StageGridProps> = ({
       </div>
 
       {/* Stage direction labels */}
-      <div className="absolute -top-5 left-1/2 -translate-x-1/2 stage-label text-[10px]">무대 뒤 (Upstage)</div>
-      <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 stage-label text-[10px]">객석 (Downstage)</div>
+      <div className="absolute -top-5 left-1/2 -translate-x-1/2 stage-label text-[9px]">무대 뒤 (Upstage)</div>
+      <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 stage-label text-[9px]">객석 (Downstage)</div>
 
       {/* Elements */}
-      {elements.map((el) => (
-        <div
-          key={el.id}
-          data-draggable
-          className="absolute cursor-move"
-          style={{
-            left: el.position.x,
-            top: el.position.y,
-            width: el.size?.width || 30,
-            height: el.size?.height || 30,
-            transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
-          }}
-          onMouseDown={(e) => handleElementMouseDown(e, el.id)}
-          onContextMenu={(e) => handleContextMenu(e, el.id)}
-        >
-          {el.type === "character" ? (
-            <div className="flex flex-col items-center" title={el.label}>
-              <svg width={el.size?.width || 30} height={el.size?.height || 30} viewBox="0 0 24 24" fill={el.color || "#333"}>
-                <circle cx="12" cy="6" r="4" />
-                <path d="M12 12c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z" />
-              </svg>
-              {el.label && (
-                <span className="text-[8px] font-medium leading-none mt-0.5 whitespace-nowrap max-w-[50px] truncate text-center" style={{ color: el.color }}>
-                  {el.label}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div
-              className="w-full h-full"
-              dangerouslySetInnerHTML={{ __html: el.svg || "" }}
-            />
-          )}
-        </div>
-      ))}
+      {elements.map((el) => {
+        const isPathOrCustom = el.type === "path" || el.type === "custom";
+        return (
+          <div
+            key={el.id}
+            data-draggable
+            className={`absolute cursor-move group ${draggingId === el.id ? "z-20 opacity-80" : "z-10"}`}
+            style={{
+              left: el.position.x,
+              top: el.position.y,
+              width: el.size?.width || 30,
+              height: el.size?.height || 30,
+              transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+            }}
+            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+            onContextMenu={(e) => handleContextMenu(e, el.id)}
+          >
+            {el.type === "character" ? (
+              <div className="flex flex-col items-center" title={el.label}>
+                <svg width={el.size?.width || 30} height={el.size?.height || 30} viewBox="0 0 24 24" fill={el.color || "#333"}>
+                  <circle cx="12" cy="6" r="4" />
+                  <path d="M12 12c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z" />
+                </svg>
+                {el.label && (
+                  <span className="text-[8px] font-semibold leading-none mt-0.5 whitespace-nowrap max-w-[50px] truncate text-center" style={{ color: el.color }}>
+                    {el.label}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div
+                className="w-full h-full"
+                dangerouslySetInnerHTML={{ __html: el.svg || "" }}
+              />
+            )}
+            {/* Resize handle for path/custom in choreography */}
+            {isPathOrCustom && onElementResize && (
+              <div
+                data-resize-handle
+                className="absolute -bottom-1 -right-1 w-3 h-3 bg-primary rounded-sm cursor-se-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                onMouseDown={(e) => handleResizeMouseDown(e, el.id)}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
