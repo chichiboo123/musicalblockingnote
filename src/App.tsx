@@ -17,7 +17,7 @@ const App = () => (
       <BlockingProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename="/musicalblockingnote">
           <Routes>
             <Route path="/" element={<MainPage />} />
             <Route path="/choreography" element={<ChoreographyPage />} />
