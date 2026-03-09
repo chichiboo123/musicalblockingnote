@@ -41,14 +41,12 @@ const MainPage = () => {
             드래그 앤 드롭으로 쉽게
           </motion.div>
           <h2 className="text-4xl md:text-5xl font-extrabold text-foreground mb-4 tracking-tight">
-            무대 동선을
-            <br />
             <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'var(--gradient-primary)' }}>
-              설계하세요
+              뮤지컬 동선 노트
             </span>
           </h2>
           <p className="text-muted-foreground text-lg max-w-lg mx-auto leading-relaxed">
-            배우의 움직임을 시각적으로 기획하고 문서화합니다
+            Musical Theatre Blocking Note
           </p>
         </motion.div>
 
