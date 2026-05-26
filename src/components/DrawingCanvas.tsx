@@ -1,4 +1,5 @@
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, useEffect } from "react";
+import { Undo2, Eraser, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface DrawingCanvasProps {
@@ -11,7 +12,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({ onSavePattern }) => {
   const [paths, setPaths] = useState<{ x: number; y: number }[][]>([]);
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
 
-  const getPos = (e: React.MouseEvent) => {
+  const getPos = (e: React.PointerEvent) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     return {
@@ -20,19 +21,20 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({ onSavePattern }) => {
     };
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
     setIsDrawing(true);
     setCurrentPath([getPos(e)]);
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDrawing) return;
     const pos = getPos(e);
     setCurrentPath((prev) => [...prev, pos]);
-    drawAll([...paths, [...currentPath, pos]]);
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = () => {
     if (!isDrawing) return;
     setIsDrawing(false);
     if (currentPath.length > 1) {
@@ -41,7 +43,7 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({ onSavePattern }) => {
     setCurrentPath([]);
   };
 
-  const drawAll = useCallback((allPaths: { x: number; y: number }[][]) => {
+  const drawAll = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
@@ -51,23 +53,34 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({ onSavePattern }) => {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    allPaths.forEach((path) => {
+    const all = [...paths, ...(currentPath.length > 1 ? [currentPath] : [])];
+    all.forEach((path) => {
       if (path.length < 2) return;
       ctx.beginPath();
       ctx.moveTo(path[0].x, path[0].y);
       path.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
       ctx.stroke();
     });
-  }, []);
+
+    if (all.length === 0) {
+      ctx.fillStyle = "rgba(120,120,140,0.45)";
+      ctx.font = "14px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("여기에 원하는 동선 패턴을 그려보세요", 150, 150);
+    }
+  }, [paths, currentPath]);
+
+  useEffect(() => {
+    drawAll();
+  }, [drawAll]);
 
   const handleClear = () => {
     setPaths([]);
     setCurrentPath([]);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext("2d")!;
-      ctx.clearRect(0, 0, 300, 300);
-    }
+  };
+
+  const handleUndoStroke = () => {
+    setPaths((prev) => prev.slice(0, -1));
   };
 
   const handleSave = () => {
@@ -83,24 +96,42 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({ onSavePattern }) => {
     handleClear();
   };
 
+  const hasContent = paths.length > 0;
+
   return (
     <div className="space-y-2">
       <canvas
         ref={canvasRef}
         width={300}
         height={300}
-        className="w-full aspect-square border border-border rounded-lg cursor-crosshair bg-card"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        className="w-full aspect-square border border-border rounded-lg cursor-crosshair bg-card touch-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
       />
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={handleClear} className="flex-1">
-          지우기
+      <div className="flex gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleUndoStroke}
+          disabled={paths.length === 0}
+          title="한 획 되돌리기"
+          aria-label="한 획 되돌리기"
+        >
+          <Undo2 className="w-3.5 h-3.5" />
         </Button>
-        <Button size="sm" onClick={handleSave} className="flex-1">
-          패턴 저장
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleClear}
+          disabled={!hasContent}
+          className="flex-1"
+        >
+          <Eraser className="w-3.5 h-3.5 mr-1" /> 전체 지우기
+        </Button>
+        <Button size="sm" onClick={handleSave} disabled={!hasContent} className="flex-1">
+          <Save className="w-3.5 h-3.5 mr-1" /> 저장
         </Button>
       </div>
     </div>
