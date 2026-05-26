@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import type { BlockingElement, ContextMenuState } from "@/types/blocking";
 
 interface StageGridProps {
@@ -9,6 +9,7 @@ interface StageGridProps {
   onElementRemove: (elementId: string, sectionIndex: number) => void;
   onElementResize?: (elementId: string, size: { width: number; height: number }, sectionIndex: number) => void;
   onContextMenu?: (state: ContextMenuState) => void;
+  onMoveCommit?: () => void;
   isChoreography?: boolean;
   compact?: boolean;
 }
@@ -33,14 +34,58 @@ const StageGrid: React.FC<StageGridProps> = ({
   onElementRemove,
   onElementResize,
   onContextMenu,
+  onMoveCommit,
   isChoreography = false,
   compact = false,
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  const [selectedId, setSelectedIdState] = useState<string | null>(null);
+  const movedRef = useRef(false);
+
+  const setSelectedId = useCallback(
+    (id: string | null) => {
+      setSelectedIdState(id);
+      if (id) {
+        window.dispatchEvent(
+          new CustomEvent("blocking-selection", { detail: { sectionIndex } })
+        );
+      }
+    },
+    [sectionIndex]
+  );
+
+  useEffect(() => {
+    const onOtherSelection = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.sectionIndex !== sectionIndex) {
+        setSelectedIdState(null);
+      }
+    };
+    window.addEventListener("blocking-selection", onOtherSelection);
+    return () => window.removeEventListener("blocking-selection", onOtherSelection);
+  }, [sectionIndex]);
+
+  const clampPosition = useCallback(
+    (x: number, y: number, w: number, h: number) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return { x, y };
+      // Keep at least 20% of element visible inside the stage
+      const minX = -w * 0.8;
+      const minY = -h * 0.8;
+      const maxX = rect.width - w * 0.2;
+      const maxY = rect.height - h * 0.2;
+      return {
+        x: Math.min(Math.max(x, minX), maxX),
+        y: Math.min(Math.max(y, minY), maxY),
+      };
+    },
+    []
+  );
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -65,8 +110,14 @@ const StageGrid: React.FC<StageGridProps> = ({
         const y = e.clientY - rect.top;
 
         const isPathOrCustom = data.type === "path" || data.type === "custom";
-        const centerX = rect.width / 2 - 40;
-        const centerY = rect.height / 2 - 40;
+        const size = isPathOrCustom ? { width: 80, height: 80 } : { width: 30, height: 30 };
+        const centerX = rect.width / 2 - size.width / 2;
+        const centerY = rect.height / 2 - size.height / 2;
+
+        const rawPos = isChoreography && isPathOrCustom
+          ? { x: centerX, y: centerY }
+          : { x: x - size.width / 2, y: y - size.height / 2 };
+        const position = clampPosition(rawPos.x, rawPos.y, size.width, size.height);
 
         const newElement: BlockingElement = {
           id: `${data.type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -74,67 +125,92 @@ const StageGrid: React.FC<StageGridProps> = ({
           svg: data.svg,
           color: data.color,
           label: data.label,
-          position: isChoreography && isPathOrCustom
-            ? { x: centerX, y: centerY }
-            : { x: x - 15, y: y - 15 },
-          size: isPathOrCustom ? { width: 80, height: 80 } : { width: 30, height: 30 },
+          position,
+          size,
           rotation: 0,
         };
 
         onElementDrop(newElement, sectionIndex);
+        setSelectedId(newElement.id);
       } catch (err) {
         console.error("Drop error:", err);
       }
     },
-    [sectionIndex, onElementDrop, isChoreography]
+    [sectionIndex, onElementDrop, isChoreography, clampPosition, setSelectedId]
   );
 
-  const handleElementMouseDown = (e: React.MouseEvent, elementId: string) => {
-    if (e.button !== 0) return;
+  const beginPointerDrag = (e: React.PointerEvent, elementId: string) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
     e.stopPropagation();
     const el = elements.find((el) => el.id === elementId);
     if (!el) return;
 
     setDraggingId(elementId);
+    setSelectedId(elementId);
+    movedRef.current = false;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   };
 
-  const handleResizeMouseDown = (e: React.MouseEvent, elementId: string) => {
+  const beginResize = (e: React.PointerEvent, elementId: string) => {
     e.stopPropagation();
     e.preventDefault();
     const el = elements.find((el) => el.id === elementId);
     if (!el) return;
     setResizingId(elementId);
+    movedRef.current = false;
     setResizeStart({ x: e.clientX, y: e.clientY, w: el.size?.width || 80, h: el.size?.height || 80 });
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   };
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
       if (resizingId && onElementResize) {
         const dx = e.clientX - resizeStart.x;
         const dy = e.clientY - resizeStart.y;
-        const newW = Math.max(30, resizeStart.w + dx);
-        const newH = Math.max(30, resizeStart.h + dy);
+        const newW = Math.max(30, Math.min(rect.width, resizeStart.w + dx));
+        const newH = Math.max(30, Math.min(rect.height, resizeStart.h + dy));
+        movedRef.current = true;
         onElementResize(resizingId, { width: newW, height: newH }, sectionIndex);
         return;
       }
       if (!draggingId) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left - dragOffset.x;
-      const y = e.clientY - rect.top - dragOffset.y;
-      onElementMove(draggingId, { x, y }, sectionIndex);
+      const el = elements.find((e) => e.id === draggingId);
+      const w = el?.size?.width || 30;
+      const h = el?.size?.height || 30;
+      const rawX = e.clientX - rect.left - dragOffset.x;
+      const rawY = e.clientY - rect.top - dragOffset.y;
+      const pos = clampPosition(rawX, rawY, w, h);
+      movedRef.current = true;
+      onElementMove(draggingId, pos, sectionIndex);
     },
-    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize]
+    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize, elements, clampPosition]
   );
 
-  const handleMouseUp = () => {
+  const handlePointerUp = () => {
+    if ((draggingId || resizingId) && movedRef.current) {
+      onMoveCommit?.();
+    }
     setDraggingId(null);
     setResizingId(null);
+    movedRef.current = false;
   };
 
   const handleContextMenu = (e: React.MouseEvent, elementId: string) => {
     e.preventDefault();
+    e.stopPropagation();
+    setSelectedId(elementId);
     onContextMenu?.({
       show: true,
       x: e.clientX,
@@ -144,26 +220,70 @@ const StageGrid: React.FC<StageGridProps> = ({
     });
   };
 
+  const handleStageClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      setSelectedId(null);
+    }
+  };
+
+  // Keyboard delete for selected element
+  useEffect(() => {
+    if (!selectedId) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        onElementRemove(selectedId, sectionIndex);
+        setSelectedId(null);
+      } else if (e.key === "Escape") {
+        setSelectedId(null);
+      } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+        const el = elements.find((el) => el.id === selectedId);
+        if (!el) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 2;
+        const w = el.size?.width || 30;
+        const h = el.size?.height || 30;
+        let { x, y } = el.position;
+        if (e.key === "ArrowLeft") x -= step;
+        if (e.key === "ArrowRight") x += step;
+        if (e.key === "ArrowUp") y -= step;
+        if (e.key === "ArrowDown") y += step;
+        const pos = clampPosition(x, y, w, h);
+        onElementMove(selectedId, pos, sectionIndex);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // setSelectedId is stable enough (depends only on sectionIndex which is in deps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, elements, onElementRemove, onElementMove, sectionIndex, clampPosition]);
+
   return (
     <div
-      className={`stage-grid relative w-full select-none overflow-hidden ${
+      ref={containerRef}
+      className={`stage-grid relative w-full select-none overflow-hidden touch-none ${
         compact ? "aspect-[3/2] max-w-[360px]" : "aspect-[3/2]"
       } ${isDragOver ? "ring-2 ring-primary/50 bg-primary/5" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onClick={handleStageClick}
     >
       {/* Grid lines */}
       <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
         {STAGE_LABELS.flat().map((label, i) => (
           <div
             key={i}
-            className="stage-grid-line border flex items-center justify-center"
+            className="stage-grid-line border flex items-start justify-start p-1"
           >
-            <span className="stage-label text-[10px] opacity-50" title={LABEL_FULL[Math.floor(i / 3)][i % 3]}>
+            <span className="stage-label text-[10px] opacity-40" title={LABEL_FULL[Math.floor(i / 3)][i % 3]}>
               {label}
             </span>
           </div>
@@ -171,42 +291,54 @@ const StageGrid: React.FC<StageGridProps> = ({
       </div>
 
       {/* Stage direction labels */}
-      <div className="absolute -top-5 left-1/2 -translate-x-1/2 stage-label text-[9px]">무대 뒤 (Upstage)</div>
-      <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 stage-label text-[9px]">객석 (Downstage)</div>
+      <div className="absolute -top-5 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none">무대 뒤 (Upstage)</div>
+      <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none">객석 (Downstage)</div>
 
       {/* Elements */}
       {elements.map((el) => {
         const isPathOrCustom = el.type === "path" || el.type === "custom";
+        const isSelected = selectedId === el.id;
         return (
           <div
             key={el.id}
             data-draggable
-            className={`absolute cursor-move group ${draggingId === el.id ? "z-20 opacity-80" : "z-10"}`}
+            data-selected={isSelected ? "true" : undefined}
+            className={`absolute cursor-move group ${draggingId === el.id ? "z-20 opacity-80" : isSelected ? "z-20" : "z-10"} ${
+              isSelected ? "ring-2 ring-primary/70 ring-offset-1 rounded-sm" : ""
+            }`}
             style={{
               left: el.position.x,
               top: el.position.y,
               width: el.size?.width || 30,
               height: el.size?.height || 30,
               transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+              touchAction: "none",
             }}
-            onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+            onPointerDown={(e) => beginPointerDrag(e, el.id)}
             onContextMenu={(e) => handleContextMenu(e, el.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedId(el.id);
+            }}
           >
             {el.type === "character" ? (
-              <div className="flex flex-col items-center" title={el.label}>
+              <div className="flex flex-col items-center pointer-events-none" title={el.label}>
                 <svg width={el.size?.width || 30} height={el.size?.height || 30} viewBox="0 0 24 24" fill={el.color || "#333"}>
                   <circle cx="12" cy="6" r="4" />
                   <path d="M12 12c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z" />
                 </svg>
                 {el.label && (
-                  <span className="text-[8px] font-semibold leading-none mt-0.5 whitespace-nowrap max-w-[50px] truncate text-center" style={{ color: el.color }}>
+                  <span
+                    className="text-[10px] font-bold leading-tight mt-0.5 whitespace-nowrap max-w-[64px] truncate text-center px-1 rounded bg-white/85"
+                    style={{ color: el.color }}
+                  >
                     {el.label}
                   </span>
                 )}
               </div>
             ) : (
               <div
-                className="w-full h-full"
+                className="w-full h-full pointer-events-none"
                 dangerouslySetInnerHTML={{ __html: el.svg || "" }}
               />
             )}
@@ -214,8 +346,9 @@ const StageGrid: React.FC<StageGridProps> = ({
             {isPathOrCustom && onElementResize && (
               <div
                 data-resize-handle
-                className="absolute -bottom-1 -right-1 w-3 h-3 bg-primary rounded-sm cursor-se-resize opacity-0 group-hover:opacity-100 transition-opacity"
-                onMouseDown={(e) => handleResizeMouseDown(e, el.id)}
+                className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-primary rounded-sm cursor-se-resize opacity-0 group-hover:opacity-100 data-[selected=true]:opacity-100 transition-opacity"
+                data-selected={isSelected ? "true" : undefined}
+                onPointerDown={(e) => beginResize(e, el.id)}
               />
             )}
           </div>

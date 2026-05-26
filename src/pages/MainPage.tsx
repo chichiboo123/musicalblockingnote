@@ -119,21 +119,28 @@ const MainPage = () => {
           <h3 className="text-center text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-widest">
             무대 구분 명칭
           </h3>
-          <div className="stage-grid aspect-[3/2] grid grid-cols-3 grid-rows-3 text-center text-xs">
-            {[
-              "Up Left (UL)", "Up Center (UC)", "Up Right (UR)",
-              "Stage Left (SL)", "Center Stage (CS)", "Stage Right (SR)",
-              "Down Left (DL)", "Down Center (DC)", "Down Right (DR)",
-            ].map((label) => (
-              <div key={label} className="stage-grid-line border flex items-center justify-center p-2">
-                <span className="stage-label text-[10px]">{label}</span>
-              </div>
-            ))}
+          <div className="relative">
+            <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+              무대 뒤 (Upstage)
+            </div>
+            <div className="stage-grid aspect-[3/2] grid grid-cols-3 grid-rows-3 text-center text-xs">
+              {[
+                "Up Left (UL)", "Up Center (UC)", "Up Right (UR)",
+                "Stage Left (SL)", "Center Stage (CS)", "Stage Right (SR)",
+                "Down Left (DL)", "Down Center (DC)", "Down Right (DR)",
+              ].map((label) => (
+                <div key={label} className="stage-grid-line border flex items-center justify-center p-2">
+                  <span className="stage-label text-[10px]">{label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+              객석 (Downstage)
+            </div>
           </div>
-          <div className="flex justify-between mt-2 text-[10px] text-muted-foreground px-2">
-            <span>← 객석에서 보았을 때</span>
-            <span>관객 쪽 →</span>
-          </div>
+          <p className="text-[11px] text-muted-foreground text-center mt-8 leading-relaxed">
+            ※ 좌·우 방향은 <strong className="text-foreground">객석에서 무대를 본 시점</strong>을 기준으로 합니다.
+          </p>
         </motion.div>
       </main>
 
