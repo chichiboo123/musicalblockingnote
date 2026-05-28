@@ -13,7 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { usePersistentState, clearPersistentState } from "@/hooks/use-persistent-state";
+import { usePersistentState, clearPersistentState, useSaveStatus } from "@/hooks/use-persistent-state";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import StageGrid from "@/components/StageGrid";
 import DraggableElement from "@/components/DraggableElement";
@@ -37,6 +37,7 @@ const ScenePage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const history = useUndoRedo<SceneState>();
+  const saveStatus = useSaveStatus();
 
   const [title, setTitle] = usePersistentState(`${STORAGE_KEY}:title`, "");
   const [characters, setCharacters] = usePersistentState(`${STORAGE_KEY}:characters`, "");
@@ -256,8 +257,10 @@ const ScenePage: React.FC = () => {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [title, characters, sceneSections]);
 
-  while (sectionRefs.current.length < sceneSections.length) {
-    sectionRefs.current.push(React.createRef<HTMLDivElement>());
+  if (sectionRefs.current.length !== sceneSections.length) {
+    sectionRefs.current = sceneSections.map(
+      (_, i) => sectionRefs.current[i] || React.createRef<HTMLDivElement>()
+    );
   }
 
   const iconBtn = (icon: React.ReactNode, label: string, onClick: () => void, disabled?: boolean) => (
@@ -283,6 +286,16 @@ const ScenePage: React.FC = () => {
             <img src={dancingIcon} alt="" className="w-5 h-5 shrink-0" />
             <span className="text-sm font-semibold text-foreground truncate">장면별 동선</span>
           </div>
+          {saveStatus !== "idle" && (
+            <span
+              className={`text-[11px] ml-1 transition-opacity ${
+                saveStatus === "saving" ? "text-muted-foreground" : "text-primary"
+              }`}
+              aria-live="polite"
+            >
+              {saveStatus === "saving" ? "저장 중…" : "✓ 자동 저장됨"}
+            </span>
+          )}
           <div className="flex-1" />
           <div className="flex gap-1.5 flex-wrap items-center">
             {iconBtn(<Undo2 className="w-3.5 h-3.5" />, "되돌리기 (Ctrl+Z)", handleUndo, !history.canUndo)}
@@ -347,13 +360,13 @@ const ScenePage: React.FC = () => {
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">프로젝트 제목</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 레미제라블 2막" />
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 뮤지컬 패딩턴 2막" />
           </div>
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">
               캐릭터 <span className="text-muted-foreground text-xs font-normal">(쉼표로 구분)</span>
             </label>
-            <Input value={characters} onChange={(e) => setCharacters(e.target.value)} placeholder="예: 장발장, 자베르" />
+            <Input value={characters} onChange={(e) => setCharacters(e.target.value)} placeholder="예: 패딩턴, 미스터 브라운, 너클스" />
           </div>
         </div>
 
@@ -368,7 +381,7 @@ const ScenePage: React.FC = () => {
               )}
               <div className="flex flex-wrap gap-2">
                 {characterList.map((name, i) => (
-                  <DraggableElement key={name} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
+                  <DraggableElement key={`char-${i}`} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
                     <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
                     <span className="text-xs font-medium" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
                   </DraggableElement>
@@ -392,7 +405,7 @@ const ScenePage: React.FC = () => {
               <div key={section.id} ref={sectionRefs.current[index]} className="section-card p-3">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-foreground">장면 {section.id}</h3>
-                  <div className="flex gap-0.5">
+                  <div className="flex gap-0.5" data-export-hidden>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleExportJPG(index)} aria-label="이미지로 저장">
@@ -416,7 +429,7 @@ const ScenePage: React.FC = () => {
                 <Textarea
                   value={section.script}
                   onChange={(e) => handleScriptChange(index, e.target.value)}
-                  placeholder="스크립트..."
+                  placeholder="예: 패딩턴이 가방을 들고 무대 중앙으로 등장한다."
                   className="mb-2 min-h-[40px] text-xs resize-none"
                 />
                 <StageGrid

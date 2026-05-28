@@ -13,7 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { usePersistentState, clearPersistentState } from "@/hooks/use-persistent-state";
+import { usePersistentState, clearPersistentState, useSaveStatus } from "@/hooks/use-persistent-state";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import StageGrid from "@/components/StageGrid";
 import DraggableElement from "@/components/DraggableElement";
@@ -33,6 +33,7 @@ const ChoreographyPage: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const history = useUndoRedo<BlockingState>();
+  const saveStatus = useSaveStatus();
 
   const [title, setTitle] = usePersistentState(`${STORAGE_KEY}:title`, "");
   const [characters, setCharacters] = usePersistentState(`${STORAGE_KEY}:characters`, "");
@@ -301,8 +302,11 @@ const ChoreographyPage: React.FC = () => {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [title, characters, verseSections, customPatterns]);
 
-  while (sectionRefs.current.length < verseSections.length) {
-    sectionRefs.current.push(React.createRef<HTMLDivElement>());
+  // Keep sectionRefs aligned with current sections (without mutating during render)
+  if (sectionRefs.current.length !== verseSections.length) {
+    sectionRefs.current = verseSections.map(
+      (_, i) => sectionRefs.current[i] || React.createRef<HTMLDivElement>()
+    );
   }
 
   const iconBtn = (
@@ -339,6 +343,16 @@ const ChoreographyPage: React.FC = () => {
             <img src={dancingIcon} alt="" className="w-5 h-5 shrink-0" />
             <span className="text-sm font-semibold text-foreground truncate">뮤지컬 안무 동선</span>
           </div>
+          {saveStatus !== "idle" && (
+            <span
+              className={`text-[11px] ml-1 transition-opacity ${
+                saveStatus === "saving" ? "text-muted-foreground" : "text-primary"
+              }`}
+              aria-live="polite"
+            >
+              {saveStatus === "saving" ? "저장 중…" : "✓ 자동 저장됨"}
+            </span>
+          )}
           <div className="flex-1" />
           <div className="flex gap-1.5 flex-wrap items-center">
             {iconBtn(<Undo2 className="w-3.5 h-3.5" />, "되돌리기 (Ctrl+Z)", handleUndo, { disabled: !history.canUndo })}
@@ -403,13 +417,13 @@ const ChoreographyPage: React.FC = () => {
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">프로젝트 제목</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 라이온킹 1막" />
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 뮤지컬 패딩턴 1막" />
           </div>
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">
               캐릭터 <span className="text-muted-foreground text-xs font-normal">(쉼표로 구분)</span>
             </label>
-            <Input value={characters} onChange={(e) => setCharacters(e.target.value)} placeholder="예: 심바, 날라, 스카" />
+            <Input value={characters} onChange={(e) => setCharacters(e.target.value)} placeholder="예: 패딩턴, 브라운 부인, 주디" />
           </div>
         </div>
 
@@ -424,7 +438,7 @@ const ChoreographyPage: React.FC = () => {
               )}
               <div className="flex flex-wrap gap-2">
                 {characterList.map((name, i) => (
-                  <DraggableElement key={name} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
+                  <DraggableElement key={`char-${i}`} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
                     <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
                     <span className="text-xs font-medium" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
                   </DraggableElement>
@@ -494,7 +508,7 @@ const ChoreographyPage: React.FC = () => {
               <div key={section.id} ref={sectionRefs.current[index]} className="section-card">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-bold text-foreground">절 {section.id}</h3>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1" data-export-hidden>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button variant="ghost" size="sm" onClick={() => handleExportJPG(index)} aria-label="이미지로 저장">
@@ -518,7 +532,7 @@ const ChoreographyPage: React.FC = () => {
                 <Textarea
                   value={section.lyrics}
                   onChange={(e) => handleLyricsChange(index, e.target.value)}
-                  placeholder="가사를 입력하세요..."
+                  placeholder="예: 런던 거리 위, 패딩턴이 처음 도착했네"
                   className="mb-3 min-h-[60px] text-sm"
                 />
                 <StageGrid
