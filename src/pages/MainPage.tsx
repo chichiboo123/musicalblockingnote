@@ -56,8 +56,17 @@ const MainPage = () => {
             initial={{ opacity: 0, x: -24 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2, duration: 0.5 }}
-            className="mode-card group"
+            className="mode-card group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            role="button"
+            tabIndex={0}
+            aria-label="뮤지컬 안무 동선 모드로 이동"
             onClick={() => navigate("/choreography")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                navigate("/choreography");
+              }
+            }}
           >
             <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-5 group-hover:bg-primary/20 transition-colors">
               <Music className="w-7 h-7 text-primary" />
@@ -72,8 +81,17 @@ const MainPage = () => {
             initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.3, duration: 0.5 }}
-            className="mode-card group"
+            className="mode-card group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            role="button"
+            tabIndex={0}
+            aria-label="장면별 동선 모드로 이동"
             onClick={() => navigate("/scene")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                navigate("/scene");
+              }
+            }}
           >
             <div className="w-14 h-14 rounded-2xl bg-secondary/10 flex items-center justify-center mb-5 group-hover:bg-secondary/20 transition-colors">
               <Film className="w-7 h-7 text-secondary" />

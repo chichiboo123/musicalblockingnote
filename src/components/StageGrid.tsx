@@ -95,6 +95,57 @@ const StageGrid: React.FC<StageGridProps> = ({
 
   const handleDragLeave = () => setIsDragOver(false);
 
+  const performDrop = useCallback(
+    (data: { type: BlockingElement["type"]; svg?: string; color?: string; label?: string }, clientX: number, clientY: number) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+
+      const isPathOrCustom = data.type === "path" || data.type === "custom";
+      const size = isPathOrCustom ? { width: 80, height: 80 } : { width: 30, height: 30 };
+      const centerX = rect.width / 2 - size.width / 2;
+      const centerY = rect.height / 2 - size.height / 2;
+
+      const rawPos = isChoreography && isPathOrCustom
+        ? { x: centerX, y: centerY }
+        : { x: x - size.width / 2, y: y - size.height / 2 };
+      const position = clampPosition(rawPos.x, rawPos.y, size.width, size.height);
+
+      const newElement: BlockingElement = {
+        id: `${data.type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        type: data.type,
+        svg: data.svg,
+        color: data.color,
+        label: data.label,
+        position,
+        size,
+        rotation: 0,
+      };
+
+      onElementDrop(newElement, sectionIndex);
+      setSelectedId(newElement.id);
+    },
+    [sectionIndex, onElementDrop, isChoreography, clampPosition, setSelectedId]
+  );
+
+  // Listen for touch-based drops dispatched from DraggableElement
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const onTouchDrop = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail) return;
+      performDrop(
+        { type: detail.type, svg: detail.svg, color: detail.color, label: detail.label },
+        detail.clientX,
+        detail.clientY
+      );
+    };
+    node.addEventListener("blocking-touch-drop", onTouchDrop);
+    return () => node.removeEventListener("blocking-touch-drop", onTouchDrop);
+  }, [performDrop]);
+
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -105,39 +156,23 @@ const StageGrid: React.FC<StageGridProps> = ({
 
       try {
         const data = JSON.parse(jsonData);
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        const isPathOrCustom = data.type === "path" || data.type === "custom";
-        const size = isPathOrCustom ? { width: 80, height: 80 } : { width: 30, height: 30 };
-        const centerX = rect.width / 2 - size.width / 2;
-        const centerY = rect.height / 2 - size.height / 2;
-
-        const rawPos = isChoreography && isPathOrCustom
-          ? { x: centerX, y: centerY }
-          : { x: x - size.width / 2, y: y - size.height / 2 };
-        const position = clampPosition(rawPos.x, rawPos.y, size.width, size.height);
-
-        const newElement: BlockingElement = {
-          id: `${data.type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          type: data.type,
-          svg: data.svg,
-          color: data.color,
-          label: data.label,
-          position,
-          size,
-          rotation: 0,
-        };
-
-        onElementDrop(newElement, sectionIndex);
-        setSelectedId(newElement.id);
+        performDrop(data, e.clientX, e.clientY);
       } catch (err) {
         console.error("Drop error:", err);
       }
     },
-    [sectionIndex, onElementDrop, isChoreography, clampPosition, setSelectedId]
+    [performDrop]
   );
+
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressFiredRef = useRef(false);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
 
   const beginPointerDrag = (e: React.PointerEvent, elementId: string) => {
     if (e.button !== 0 && e.pointerType === "mouse") return;
@@ -148,12 +183,31 @@ const StageGrid: React.FC<StageGridProps> = ({
     setDraggingId(elementId);
     setSelectedId(elementId);
     movedRef.current = false;
+    longPressFiredRef.current = false;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
       // ignore
+    }
+    // Long-press to open context menu on touch
+    if (e.pointerType === "touch" || e.pointerType === "pen") {
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      cancelLongPress();
+      longPressTimerRef.current = window.setTimeout(() => {
+        if (!movedRef.current) {
+          longPressFiredRef.current = true;
+          onContextMenu?.({
+            show: true,
+            x: clientX,
+            y: clientY,
+            targetId: elementId,
+            sectionIndex,
+          });
+        }
+      }, 500);
     }
   };
 
@@ -193,15 +247,17 @@ const StageGrid: React.FC<StageGridProps> = ({
       const rawY = e.clientY - rect.top - dragOffset.y;
       const pos = clampPosition(rawX, rawY, w, h);
       movedRef.current = true;
+      cancelLongPress();
       onElementMove(draggingId, pos, sectionIndex);
     },
-    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize, elements, clampPosition]
+    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize, elements, clampPosition, cancelLongPress]
   );
 
   const handlePointerUp = () => {
     if ((draggingId || resizingId) && movedRef.current) {
       onMoveCommit?.();
     }
+    cancelLongPress();
     setDraggingId(null);
     setResizingId(null);
     movedRef.current = false;
@@ -346,7 +402,8 @@ const StageGrid: React.FC<StageGridProps> = ({
             {isPathOrCustom && onElementResize && (
               <div
                 data-resize-handle
-                className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-primary rounded-sm cursor-se-resize opacity-0 group-hover:opacity-100 data-[selected=true]:opacity-100 transition-opacity"
+                aria-label="크기 조절"
+                className="absolute -bottom-2 -right-2 w-5 h-5 bg-primary rounded-full cursor-se-resize opacity-0 group-hover:opacity-100 data-[selected=true]:opacity-100 transition-opacity shadow ring-2 ring-background touch-none"
                 data-selected={isSelected ? "true" : undefined}
                 onPointerDown={(e) => beginResize(e, el.id)}
               />

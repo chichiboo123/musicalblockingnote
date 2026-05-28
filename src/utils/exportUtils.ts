@@ -4,7 +4,7 @@ import jsPDF from "jspdf";
 export async function exportAsJPG(
   contentRef: React.RefObject<HTMLDivElement>,
   filename: string,
-  title?: string
+  _title?: string
 ) {
   if (!contentRef.current) return;
 
@@ -19,20 +19,13 @@ export async function exportAsJPG(
         (el as HTMLElement).style.boxShadow = "none";
         (el as HTMLElement).style.outline = "none";
       });
-      // Hide resize handles
+      // Hide UI controls and resize handles that don't belong in exports
+      const controls = clonedDoc.querySelectorAll("[data-export-hidden]");
+      controls.forEach((h) => ((h as HTMLElement).style.display = "none"));
       const handles = clonedDoc.querySelectorAll("[data-resize-handle]");
       handles.forEach((h) => ((h as HTMLElement).style.display = "none"));
     },
   });
-
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    // Add MEMO watermark
-    ctx.font = "bold 28px Arial";
-    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
-    ctx.textAlign = "right";
-    ctx.fillText("MEMO", canvas.width - 20, 40);
-  }
 
   const link = document.createElement("a");
   link.download = `${filename || "blocking-note"}.jpg`;
@@ -65,6 +58,10 @@ export async function exportAsPDF(
           (el as HTMLElement).style.boxShadow = "none";
           (el as HTMLElement).style.outline = "none";
         });
+        const controls = clonedDoc.querySelectorAll("[data-export-hidden]");
+        controls.forEach((h) => ((h as HTMLElement).style.display = "none"));
+        const handles = clonedDoc.querySelectorAll("[data-resize-handle]");
+        handles.forEach((h) => ((h as HTMLElement).style.display = "none"));
       },
     });
 
