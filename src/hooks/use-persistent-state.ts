@@ -12,6 +12,19 @@ function setStatus(s: SaveStatus) {
   listeners.forEach((fn) => fn(s));
 }
 
+// Debounced writes still pending — flushed synchronously when the tab closes
+// so autosave never loses the last few keystrokes.
+const pendingWrites = new Map<string, () => void>();
+
+if (typeof window !== "undefined") {
+  const flush = () => {
+    pendingWrites.forEach((write) => write());
+    pendingWrites.clear();
+  };
+  window.addEventListener("pagehide", flush);
+  window.addEventListener("beforeunload", flush);
+}
+
 export function useSaveStatus() {
   const [status, setLocal] = useState<SaveStatus>(currentStatus);
   useEffect(() => {
@@ -43,15 +56,20 @@ export function usePersistentState<T>(key: string, initialValue: T) {
       isFirstRunRef.current = false;
       return;
     }
-    pendingKeys.add(key);
-    setStatus("saving");
-    const handle = window.setTimeout(() => {
+    const write = () => {
       try {
         localStorage.setItem(key, JSON.stringify(valueRef.current));
       } catch {
         // storage may be full or unavailable; ignore silently
       }
+    };
+    pendingKeys.add(key);
+    pendingWrites.set(key, write);
+    setStatus("saving");
+    const handle = window.setTimeout(() => {
+      write();
       pendingKeys.delete(key);
+      pendingWrites.delete(key);
       if (pendingKeys.size === 0) {
         setStatus("saved");
         if (savedTimer != null) window.clearTimeout(savedTimer);

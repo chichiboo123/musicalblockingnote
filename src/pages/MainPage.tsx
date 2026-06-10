@@ -46,7 +46,7 @@ const MainPage = () => {
             </span>
           </h2>
           <p className="text-muted-foreground text-lg max-w-lg mx-auto leading-relaxed">
-            Musical Theatre Blocking Note
+            무대 위 배우들의 움직임을 시각적으로 계획하고, 이미지·PDF로 내보내세요.
           </p>
         </motion.div>
 
@@ -120,6 +120,7 @@ const MainPage = () => {
                 src="https://www.youtube.com/embed/-8XIclLTR4c"
                 title="뮤지컬 동선 노트 사용법 가이드"
                 className="w-full h-full"
+                loading="lazy"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />

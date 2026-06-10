@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import { readableTextColor } from "@/lib/utils";
 import type { BlockingElement, ContextMenuState } from "@/types/blocking";
 
 interface StageGridProps {
@@ -9,8 +10,7 @@ interface StageGridProps {
   onElementRemove: (elementId: string, sectionIndex: number) => void;
   onElementResize?: (elementId: string, size: { width: number; height: number }, sectionIndex: number) => void;
   onContextMenu?: (state: ContextMenuState) => void;
-  onMoveCommit?: () => void;
-  isChoreography?: boolean;
+  onMoveStart?: () => void;
   compact?: boolean;
 }
 
@@ -34,8 +34,7 @@ const StageGrid: React.FC<StageGridProps> = ({
   onElementRemove,
   onElementResize,
   onContextMenu,
-  onMoveCommit,
-  isChoreography = false,
+  onMoveStart,
   compact = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -104,13 +103,7 @@ const StageGrid: React.FC<StageGridProps> = ({
 
       const isPathOrCustom = data.type === "path" || data.type === "custom";
       const size = isPathOrCustom ? { width: 80, height: 80 } : { width: 30, height: 30 };
-      const centerX = rect.width / 2 - size.width / 2;
-      const centerY = rect.height / 2 - size.height / 2;
-
-      const rawPos = isChoreography && isPathOrCustom
-        ? { x: centerX, y: centerY }
-        : { x: x - size.width / 2, y: y - size.height / 2 };
-      const position = clampPosition(rawPos.x, rawPos.y, size.width, size.height);
+      const position = clampPosition(x - size.width / 2, y - size.height / 2, size.width, size.height);
 
       const newElement: BlockingElement = {
         id: `${data.type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -126,7 +119,7 @@ const StageGrid: React.FC<StageGridProps> = ({
       onElementDrop(newElement, sectionIndex);
       setSelectedId(newElement.id);
     },
-    [sectionIndex, onElementDrop, isChoreography, clampPosition, setSelectedId]
+    [sectionIndex, onElementDrop, clampPosition, setSelectedId]
   );
 
   // Listen for touch-based drops dispatched from DraggableElement
@@ -235,6 +228,8 @@ const StageGrid: React.FC<StageGridProps> = ({
         const dy = e.clientY - resizeStart.y;
         const newW = Math.max(30, Math.min(rect.width, resizeStart.w + dx));
         const newH = Math.max(30, Math.min(rect.height, resizeStart.h + dy));
+        // Snapshot pre-resize state on the first movement so a single undo reverts it
+        if (!movedRef.current) onMoveStart?.();
         movedRef.current = true;
         onElementResize(resizingId, { width: newW, height: newH }, sectionIndex);
         return;
@@ -246,17 +241,15 @@ const StageGrid: React.FC<StageGridProps> = ({
       const rawX = e.clientX - rect.left - dragOffset.x;
       const rawY = e.clientY - rect.top - dragOffset.y;
       const pos = clampPosition(rawX, rawY, w, h);
+      if (!movedRef.current) onMoveStart?.();
       movedRef.current = true;
       cancelLongPress();
       onElementMove(draggingId, pos, sectionIndex);
     },
-    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize, elements, clampPosition, cancelLongPress]
+    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize, elements, clampPosition, cancelLongPress, onMoveStart]
   );
 
   const handlePointerUp = () => {
-    if ((draggingId || resizingId) && movedRef.current) {
-      onMoveCommit?.();
-    }
     cancelLongPress();
     setDraggingId(null);
     setResizingId(null);
@@ -282,6 +275,21 @@ const StageGrid: React.FC<StageGridProps> = ({
     }
   };
 
+  // Right-click on empty stage area: open menu for paste/undo/redo
+  const handleStageContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onContextMenu?.({
+      show: true,
+      x: e.clientX,
+      y: e.clientY,
+      targetId: null,
+      sectionIndex,
+    });
+  };
+
+  // Group consecutive arrow-key moves into one undo step
+  const arrowBurstTimerRef = useRef<number | null>(null);
+
   // Keyboard delete for selected element
   useEffect(() => {
     if (!selectedId) return;
@@ -300,6 +308,14 @@ const StageGrid: React.FC<StageGridProps> = ({
         const el = elements.find((el) => el.id === selectedId);
         if (!el) return;
         e.preventDefault();
+        if (arrowBurstTimerRef.current == null) {
+          onMoveStart?.();
+        } else {
+          window.clearTimeout(arrowBurstTimerRef.current);
+        }
+        arrowBurstTimerRef.current = window.setTimeout(() => {
+          arrowBurstTimerRef.current = null;
+        }, 800);
         const step = e.shiftKey ? 10 : 2;
         const w = el.size?.width || 30;
         const h = el.size?.height || 30;
@@ -316,14 +332,19 @@ const StageGrid: React.FC<StageGridProps> = ({
     return () => window.removeEventListener("keydown", onKey);
     // setSelectedId is stable enough (depends only on sectionIndex which is in deps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, elements, onElementRemove, onElementMove, sectionIndex, clampPosition]);
+  }, [selectedId, elements, onElementRemove, onElementMove, sectionIndex, clampPosition, onMoveStart]);
 
   return (
+    <div className={`relative my-5 w-full ${compact ? "max-w-[360px]" : ""}`}>
+      {/* Stage direction labels (outside the clipped stage box so they stay visible) */}
+      <div className="absolute -top-4 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none whitespace-nowrap">무대 뒤 (Upstage)</div>
+      <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none whitespace-nowrap">객석 (Downstage)</div>
+
     <div
       ref={containerRef}
-      className={`stage-grid relative w-full select-none overflow-hidden touch-none ${
-        compact ? "aspect-[3/2] max-w-[360px]" : "aspect-[3/2]"
-      } ${isDragOver ? "ring-2 ring-primary/50 bg-primary/5" : ""}`}
+      className={`stage-grid relative w-full select-none overflow-hidden touch-none aspect-[3/2] ${
+        isDragOver ? "ring-2 ring-primary/50 bg-primary/5" : ""
+      }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -331,6 +352,7 @@ const StageGrid: React.FC<StageGridProps> = ({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       onClick={handleStageClick}
+      onContextMenu={handleStageContextMenu}
     >
       {/* Grid lines */}
       <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
@@ -345,10 +367,6 @@ const StageGrid: React.FC<StageGridProps> = ({
           </div>
         ))}
       </div>
-
-      {/* Stage direction labels */}
-      <div className="absolute -top-5 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none">무대 뒤 (Upstage)</div>
-      <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none">객석 (Downstage)</div>
 
       {/* Elements */}
       {elements.map((el) => {
@@ -386,7 +404,7 @@ const StageGrid: React.FC<StageGridProps> = ({
                 {el.label && (
                   <span
                     className="text-[10px] font-bold leading-tight mt-0.5 whitespace-nowrap max-w-[64px] truncate text-center px-1 rounded bg-white/85"
-                    style={{ color: el.color }}
+                    style={{ color: readableTextColor(el.color) }}
                   >
                     {el.label}
                   </span>
@@ -411,6 +429,7 @@ const StageGrid: React.FC<StageGridProps> = ({
           </div>
         );
       })}
+    </div>
     </div>
   );
 };
