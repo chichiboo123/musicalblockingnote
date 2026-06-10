@@ -20,6 +20,7 @@ import DraggableElement from "@/components/DraggableElement";
 import PersonIcon from "@/components/PersonIcon";
 import BlockingContextMenu from "@/components/BlockingContextMenu";
 import { exportAsJPG, exportAsPDF } from "@/utils/exportUtils";
+import { readableTextColor, sanitizeFilename } from "@/lib/utils";
 import dancingIcon from "@/assets/dancing-icon.png";
 import type { BlockingElement, SceneSection, ContextMenuState } from "@/types/blocking";
 import { CHARACTER_COLORS as COLORS } from "@/types/blocking";
@@ -132,7 +133,7 @@ const ScenePage: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${title || "scene"}.json`;
+    a.download = `${sanitizeFilename(title) || "scene"}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast({ title: "JSON 다운로드 완료" });
@@ -145,9 +146,18 @@ const ScenePage: React.FC = () => {
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target?.result as string);
+        if ((data.pageType && data.pageType !== "scene") || !Array.isArray(data.sceneSections)) {
+          toast({
+            title: "로드 실패",
+            description: "장면별 동선 파일이 아닙니다. 안무 동선 파일은 안무 동선 화면에서 불러오세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        saveState();
         setTitle(data.title || "");
         setCharacters(data.characters || "");
-        setSceneSections(data.sceneSections || DEFAULT_SECTIONS);
+        setSceneSections(data.sceneSections.length > 0 ? data.sceneSections : DEFAULT_SECTIONS);
         toast({ title: "프로젝트가 로드되었습니다" });
       } catch {
         toast({ title: "로드 실패", description: "유효한 JSON 파일이 아닙니다.", variant: "destructive" });
@@ -159,7 +169,7 @@ const ScenePage: React.FC = () => {
 
   const handleExportJPG = (index: number) => {
     const ref = sectionRefs.current[index];
-    if (ref) exportAsJPG(ref, `${title || "scene"}-${index + 1}`, title);
+    if (ref) exportAsJPG(ref, `${title || "scene"}-${index + 1}`);
   };
 
   const handleExportPDF = () => {
@@ -242,21 +252,6 @@ const ScenePage: React.FC = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, [handleUndo, handleRedo]);
 
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      const hasContent =
-        title.trim() !== "" ||
-        characters.trim() !== "" ||
-        sceneSections.some((s) => s.script.trim() !== "" || s.blockingElements.length > 0);
-      if (hasContent) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [title, characters, sceneSections]);
-
   if (sectionRefs.current.length !== sceneSections.length) {
     sectionRefs.current = sceneSections.map(
       (_, i) => sectionRefs.current[i] || React.createRef<HTMLDivElement>()
@@ -304,7 +299,7 @@ const ScenePage: React.FC = () => {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="sm" onClick={handleDownloadJSON}>
-                  <Download className="w-3.5 h-3.5 mr-1" /> JSON
+                  <Download className="w-3.5 h-3.5 mr-1" /> 파일 저장
                 </Button>
               </TooltipTrigger>
               <TooltipContent>현재 작업을 JSON 파일로 저장</TooltipContent>
@@ -383,7 +378,7 @@ const ScenePage: React.FC = () => {
                 {characterList.map((name, i) => (
                   <DraggableElement key={`char-${i}`} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
                     <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
-                    <span className="text-xs font-medium" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
+                    <span className="text-xs font-medium" style={{ color: readableTextColor(COLORS[i % COLORS.length]) }}>{name}</span>
                   </DraggableElement>
                 ))}
               </div>
@@ -395,7 +390,7 @@ const ScenePage: React.FC = () => {
                 <li>· 되돌리기 <kbd className="font-mono">Ctrl+Z</kbd></li>
                 <li>· 다시 실행 <kbd className="font-mono">Ctrl+Y</kbd></li>
                 <li>· 요소 삭제 <kbd className="font-mono">Del</kbd></li>
-                <li>· 1픽셀 이동 <kbd className="font-mono">방향키</kbd></li>
+                <li>· 요소 이동 <kbd className="font-mono">방향키</kbd> (Shift: 크게)</li>
               </ul>
             </div>
           </aside>
@@ -439,7 +434,7 @@ const ScenePage: React.FC = () => {
                   onElementMove={handleElementMove}
                   onElementRemove={handleElementRemove}
                   onContextMenu={setContextMenu}
-                  onMoveCommit={saveState}
+                  onMoveStart={saveState}
                   compact
                 />
               </div>
@@ -462,6 +457,8 @@ const ScenePage: React.FC = () => {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onClose={() => setContextMenu((prev) => ({ ...prev, show: false }))}
+        canCopy={!!contextMenu.targetId}
+        canDelete={!!contextMenu.targetId}
         canPaste={!!copiedElement}
         canUndo={history.canUndo}
         canRedo={history.canRedo}

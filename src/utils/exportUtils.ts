@@ -1,10 +1,10 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { sanitizeFilename } from "@/lib/utils";
 
 export async function exportAsJPG(
   contentRef: React.RefObject<HTMLDivElement>,
-  filename: string,
-  _title?: string
+  filename: string
 ) {
   if (!contentRef.current) return;
 
@@ -28,7 +28,7 @@ export async function exportAsJPG(
   });
 
   const link = document.createElement("a");
-  link.download = `${filename || "blocking-note"}.jpg`;
+  link.download = `${sanitizeFilename(filename) || "blocking-note"}.jpg`;
   link.href = canvas.toDataURL("image/jpeg", 0.95);
   link.click();
 }
@@ -73,5 +73,5 @@ export async function exportAsPDF(
     pdf.addImage(imgData, "JPEG", 10, 10, imgWidth, finalHeight);
   }
 
-  pdf.save(`${filename || "blocking-note"}.pdf`);
+  pdf.save(`${sanitizeFilename(filename) || "blocking-note"}.pdf`);
 }

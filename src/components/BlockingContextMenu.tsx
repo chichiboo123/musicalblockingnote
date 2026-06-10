@@ -10,6 +10,8 @@ interface BlockingContextMenuProps {
   onUndo: () => void;
   onRedo: () => void;
   onClose: () => void;
+  canCopy?: boolean;
+  canDelete?: boolean;
   canPaste: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -25,6 +27,8 @@ const BlockingContextMenu: React.FC<BlockingContextMenuProps> = ({
   onUndo,
   onRedo,
   onClose,
+  canCopy = true,
+  canDelete = true,
   canPaste,
   canUndo,
   canRedo,
@@ -61,7 +65,7 @@ const BlockingContextMenu: React.FC<BlockingContextMenuProps> = ({
       }`}
     >
       <span>{label}</span>
-      <span className="text-[10px] text-muted-foreground font-mono">{shortcut}</span>
+      {shortcut && <span className="text-[10px] text-muted-foreground font-mono">{shortcut}</span>}
     </button>
   );
 
@@ -74,10 +78,10 @@ const BlockingContextMenu: React.FC<BlockingContextMenuProps> = ({
         className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[180px]"
         style={{ left: pos.x, top: pos.y }}
       >
-        {item("복사", "Ctrl+C", onCopy)}
-        {item("붙여넣기", "Ctrl+V", onPaste, { disabled: !canPaste })}
+        {item("복사", "", onCopy, { disabled: !canCopy })}
+        {item("붙여넣기", "", onPaste, { disabled: !canPaste })}
         <div className="border-t border-border my-1" />
-        {item("삭제", "Del", onDelete, { destructive: true })}
+        {item("삭제", "Del", onDelete, { destructive: true, disabled: !canDelete })}
         <div className="border-t border-border my-1" />
         {item("되돌리기", "Ctrl+Z", onUndo, { disabled: !canUndo })}
         {item("다시 실행", "Ctrl+Y", onRedo, { disabled: !canRedo })}

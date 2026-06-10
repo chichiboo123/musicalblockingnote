@@ -22,6 +22,7 @@ import DrawingCanvas from "@/components/DrawingCanvas";
 import BlockingContextMenu from "@/components/BlockingContextMenu";
 import { recommendedPaths } from "@/components/RecommendedPaths";
 import { exportAsJPG, exportAsPDF } from "@/utils/exportUtils";
+import { readableTextColor, sanitizeFilename } from "@/lib/utils";
 import dancingIcon from "@/assets/dancing-icon.png";
 import type { BlockingElement, VerseSection, CustomPattern, ContextMenuState, BlockingState } from "@/types/blocking";
 import { CHARACTER_COLORS as COLORS } from "@/types/blocking";
@@ -160,12 +161,12 @@ const ChoreographyPage: React.FC = () => {
   };
 
   const handleDownloadJSON = () => {
-    const data = { title, characters, verseSections, customPatterns };
+    const data = { title, characters, verseSections, customPatterns, pageType: "choreography" };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${title || "choreography"}.json`;
+    a.download = `${sanitizeFilename(title) || "choreography"}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast({ title: "JSON 다운로드 완료" });
@@ -178,10 +179,19 @@ const ChoreographyPage: React.FC = () => {
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target?.result as string);
+        if (data.pageType === "scene" || !Array.isArray(data.verseSections)) {
+          toast({
+            title: "로드 실패",
+            description: "안무 동선 파일이 아닙니다. 장면별 동선 파일은 장면별 동선 화면에서 불러오세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        saveState();
         setTitle(data.title || "");
         setCharacters(data.characters || "");
-        setVerseSections(data.verseSections || DEFAULT_SECTIONS);
-        setCustomPatterns(data.customPatterns || []);
+        setVerseSections(data.verseSections.length > 0 ? data.verseSections : DEFAULT_SECTIONS);
+        setCustomPatterns(Array.isArray(data.customPatterns) ? data.customPatterns : []);
         toast({ title: "프로젝트가 로드되었습니다" });
       } catch {
         toast({ title: "로드 실패", description: "유효한 JSON 파일이 아닙니다.", variant: "destructive" });
@@ -193,7 +203,7 @@ const ChoreographyPage: React.FC = () => {
 
   const handleExportJPG = (index: number) => {
     const ref = sectionRefs.current[index];
-    if (ref) exportAsJPG(ref, `${title || "verse"}-${index + 1}`, title);
+    if (ref) exportAsJPG(ref, `${title || "verse"}-${index + 1}`);
   };
 
   const handleExportPDF = () => {
@@ -277,30 +287,11 @@ const ChoreographyPage: React.FC = () => {
       } else if ((key === "y") || (key === "z" && e.shiftKey)) {
         e.preventDefault();
         handleRedo();
-      } else if (key === "c" && copiedElement === null) {
-        // allow native copy if nothing in app
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleUndo, handleRedo, copiedElement]);
-
-  // Warn on tab close if there is unsaved content
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      const hasContent =
-        title.trim() !== "" ||
-        characters.trim() !== "" ||
-        verseSections.some((s) => s.lyrics.trim() !== "" || s.blockingElements.length > 0) ||
-        customPatterns.length > 0;
-      if (hasContent) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [title, characters, verseSections, customPatterns]);
+  }, [handleUndo, handleRedo]);
 
   // Keep sectionRefs aligned with current sections (without mutating during render)
   if (sectionRefs.current.length !== verseSections.length) {
@@ -361,7 +352,7 @@ const ChoreographyPage: React.FC = () => {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="sm" onClick={handleDownloadJSON}>
-                  <Download className="w-3.5 h-3.5 mr-1" /> JSON
+                  <Download className="w-3.5 h-3.5 mr-1" /> 파일 저장
                 </Button>
               </TooltipTrigger>
               <TooltipContent>현재 작업을 JSON 파일로 저장</TooltipContent>
@@ -440,7 +431,7 @@ const ChoreographyPage: React.FC = () => {
                 {characterList.map((name, i) => (
                   <DraggableElement key={`char-${i}`} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
                     <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
-                    <span className="text-xs font-medium" style={{ color: COLORS[i % COLORS.length] }}>{name}</span>
+                    <span className="text-xs font-medium" style={{ color: readableTextColor(COLORS[i % COLORS.length]) }}>{name}</span>
                   </DraggableElement>
                 ))}
               </div>
@@ -498,7 +489,7 @@ const ChoreographyPage: React.FC = () => {
                 <li>· 되돌리기 <kbd className="font-mono">Ctrl+Z</kbd></li>
                 <li>· 다시 실행 <kbd className="font-mono">Ctrl+Y</kbd></li>
                 <li>· 요소 삭제 <kbd className="font-mono">Del</kbd></li>
-                <li>· 1픽셀 이동 <kbd className="font-mono">방향키</kbd></li>
+                <li>· 요소 이동 <kbd className="font-mono">방향키</kbd> (Shift: 크게)</li>
               </ul>
             </div>
           </aside>
@@ -543,8 +534,7 @@ const ChoreographyPage: React.FC = () => {
                   onElementRemove={handleElementRemove}
                   onElementResize={handleElementResize}
                   onContextMenu={setContextMenu}
-                  onMoveCommit={saveState}
-                  isChoreography
+                  onMoveStart={saveState}
                 />
               </div>
             ))}
@@ -566,6 +556,8 @@ const ChoreographyPage: React.FC = () => {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onClose={() => setContextMenu((prev) => ({ ...prev, show: false }))}
+        canCopy={!!contextMenu.targetId}
+        canDelete={!!contextMenu.targetId}
         canPaste={!!copiedElement}
         canUndo={history.canUndo}
         canRedo={history.canRedo}
