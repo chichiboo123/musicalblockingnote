@@ -384,9 +384,20 @@ const ScenePage: React.FC = () => {
               </div>
             </div>
 
-            <div className="section-card text-[11px] text-muted-foreground leading-relaxed">
-              <p className="font-semibold text-foreground mb-1">단축키</p>
-              <ul className="space-y-0.5">
+            <div className="section-card text-xs text-muted-foreground leading-relaxed">
+              <p className="font-semibold text-foreground mb-2">사용법</p>
+              <ol className="space-y-1.5 list-decimal list-inside marker:text-primary marker:font-semibold">
+                <li>위에 제목과 캐릭터 이름을 입력하세요.</li>
+                <li>아이콘을 무대로 끌어다 놓으세요.</li>
+                <li>장면별로 대본과 배치를 기록하세요.</li>
+                <li>우클릭하면 복사·붙여넣기·삭제할 수 있어요.</li>
+                <li>이미지·PDF로 내보내거나 파일로 저장하세요.</li>
+              </ol>
+            </div>
+
+            <div className="section-card text-xs text-muted-foreground leading-relaxed">
+              <p className="font-semibold text-foreground mb-2">단축키</p>
+              <ul className="space-y-1">
                 <li>· 되돌리기 <kbd className="font-mono">Ctrl+Z</kbd></li>
                 <li>· 다시 실행 <kbd className="font-mono">Ctrl+Y</kbd></li>
                 <li>· 요소 삭제 <kbd className="font-mono">Del</kbd></li>

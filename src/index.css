@@ -172,4 +172,17 @@
     @apply backdrop-blur-xl border-b border-border;
     background: hsl(var(--card) / 0.85);
   }
+
+  kbd {
+    @apply inline-flex items-center justify-center min-w-[1.4rem] px-1.5 py-0.5 rounded-md
+           border border-border bg-muted text-foreground text-[11px] font-medium leading-none
+           align-middle;
+  }
+}
+
+@layer base {
+  /* KRDS: clear, visible focus indicator for keyboard users */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
 }

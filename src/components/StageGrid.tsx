@@ -335,10 +335,9 @@ const StageGrid: React.FC<StageGridProps> = ({
   }, [selectedId, elements, onElementRemove, onElementMove, sectionIndex, clampPosition, onMoveStart]);
 
   return (
-    <div className={`relative my-5 w-full ${compact ? "max-w-[360px]" : ""}`}>
-      {/* Stage direction labels (outside the clipped stage box so they stay visible) */}
-      <div className="absolute -top-4 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none whitespace-nowrap">무대 뒤 (Upstage)</div>
-      <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 stage-label text-[9px] pointer-events-none whitespace-nowrap">객석 (Downstage)</div>
+    <div className={`mx-auto my-3 flex w-full flex-col items-center gap-1 ${compact ? "max-w-[320px]" : "max-w-[460px]"}`}>
+      {/* Stage direction labels (in normal flow so they never overlap the stage) */}
+      <span className="stage-label text-[10px] select-none">무대 뒤 (Upstage)</span>
 
     <div
       ref={containerRef}
@@ -430,6 +429,7 @@ const StageGrid: React.FC<StageGridProps> = ({
         );
       })}
     </div>
+      <span className="stage-label text-[10px] select-none">객석 (Downstage)</span>
     </div>
   );
 };
