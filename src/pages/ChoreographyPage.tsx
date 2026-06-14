@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft, Plus, Trash2, Download, Upload, Image, FileText,
-  Undo2, Redo2, RotateCcw, Crosshair, HelpCircle,
+  Undo2, Redo2, RotateCcw, Crosshair, HelpCircle, Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ import BlockingContextMenu from "@/components/BlockingContextMenu";
 import { recommendedPaths } from "@/components/RecommendedPaths";
 import { exportAsJPG, exportAsPDF } from "@/utils/exportUtils";
 import { sanitizeFilename } from "@/lib/utils";
+import { buildShareUrl, decodeShare, copyToClipboard } from "@/lib/share";
 import dancingIcon from "@/assets/dancing-icon.png";
 import type { BlockingElement, VerseSection, CustomPattern, ContextMenuState, BlockingState } from "@/types/blocking";
 import { CHARACTER_COLORS as COLORS } from "@/types/blocking";
@@ -58,6 +59,8 @@ const ChoreographyPage: React.FC = () => {
   const [copiedElement, setCopiedElement] = useState<BlockingElement | null>(null);
   const [showDrawing, setShowDrawing] = useState(false);
   const [showGuides, setShowGuides] = usePersistentState(`${STORAGE_KEY}:guides`, true);
+  const [activeSection, setActiveSection] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const sectionRefs = useRef<React.RefObject<HTMLDivElement>[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -243,6 +246,27 @@ const ChoreographyPage: React.FC = () => {
     toast({ title: "PDF로 저장했습니다" });
   };
 
+  const handleShareLink = async () => {
+    const data = { title, characters, verseSections, customPatterns, pageType: "choreography" };
+    const url = buildShareUrl("choreography", data);
+    const ok = await copyToClipboard(url);
+    toast({
+      title: ok ? "공유 링크를 복사했습니다" : "링크 복사 실패",
+      description: ok ? "다른 기기에 붙여넣으면 동일한 동선을 볼 수 있어요." : "브라우저 권한을 확인해 주세요.",
+      variant: ok ? undefined : "destructive",
+    });
+  };
+
+  const handleAddElement = useCallback(
+    (payload: Pick<BlockingElement, "type" | "svg" | "color" | "label">) => {
+      const idx = Math.min(activeSection, verseSections.length - 1);
+      window.dispatchEvent(
+        new CustomEvent("blocking-add-center", { detail: { sectionIndex: Math.max(0, idx), ...payload } })
+      );
+    },
+    [activeSection, verseSections.length]
+  );
+
   const handleUndo = useCallback(() => {
     const state = history.undo({ title, characters, verseSections, customPatterns });
     if (state) {
@@ -290,6 +314,28 @@ const ChoreographyPage: React.FC = () => {
       handleElementRemove(contextMenu.targetId, contextMenu.sectionIndex);
     }
   };
+
+  // Load a shared project from the URL (?s=...) once on mount
+  useEffect(() => {
+    const s = searchParams.get("s");
+    if (!s) return;
+    const data = decodeShare<{
+      title?: string; characters?: string; verseSections?: VerseSection[];
+      customPatterns?: CustomPattern[]; pageType?: string;
+    }>(s);
+    if (data && Array.isArray(data.verseSections)) {
+      setTitle(data.title || "");
+      setCharacters(data.characters || "");
+      setVerseSections(data.verseSections.length > 0 ? data.verseSections : DEFAULT_SECTIONS);
+      setCustomPatterns(Array.isArray(data.customPatterns) ? data.customPatterns : []);
+      toast({ title: "공유된 동선을 불러왔습니다" });
+    } else {
+      toast({ title: "공유 링크를 읽을 수 없습니다", variant: "destructive" });
+    }
+    searchParams.delete("s");
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleReset = () => {
     setTitle("");
@@ -449,6 +495,9 @@ const ChoreographyPage: React.FC = () => {
                 <DropdownMenuItem onClick={handleExportAllJPG}>
                   <Image className="w-4 h-4 mr-2" /> 절별 이미지(JPG) 저장
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleShareLink}>
+                  <Link2 className="w-4 h-4 mr-2" /> 공유 링크 복사
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleDownloadJSON}>
                   <Download className="w-4 h-4 mr-2" /> 작업 파일(JSON) 저장
                 </DropdownMenuItem>
@@ -514,7 +563,7 @@ const ChoreographyPage: React.FC = () => {
             {verseSections.map((section, index) => (
               <div key={section.id} ref={sectionRefs.current[index]} className="section-card">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold text-foreground">절 {section.id}</h3>
+                  <h3 className="text-sm font-bold text-foreground">#{section.id}</h3>
                   <div className="flex gap-1" data-export-hidden>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -552,13 +601,14 @@ const ChoreographyPage: React.FC = () => {
                   onElementRotate={handleElementRotate}
                   onContextMenu={setContextMenu}
                   onMoveStart={saveState}
+                  onActivate={setActiveSection}
                   showCenterGuides={showGuides}
                 />
               </div>
             ))}
 
             <Button variant="outline" onClick={handleAddSection} className="w-full">
-              <Plus className="w-4 h-4 mr-1" /> 절 추가
+              <Plus className="w-4 h-4 mr-1" /> 블록 추가
             </Button>
           </div>
         </div>
@@ -571,6 +621,8 @@ const ChoreographyPage: React.FC = () => {
         customPatterns={customPatterns}
         onDeletePattern={handleDeletePattern}
         onOpenDrawing={() => setShowDrawing(true)}
+        onAddElement={handleAddElement}
+        shapesFirst
       />
 
       <Dialog open={showDrawing} onOpenChange={setShowDrawing}>
