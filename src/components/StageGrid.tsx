@@ -452,6 +452,9 @@ const StageGrid: React.FC<StageGridProps> = ({
       {elements.map((el) => {
         const isPathOrCustom = el.type === "path" || el.type === "custom";
         const isSelected = selectedId === el.id;
+        // Flip the rotate handle below the element when there isn't enough room
+        // above it, so the clipped stage edge never hides the handle.
+        const rotateBelow = el.position.y < 30;
         return (
           <div
             key={el.id}
@@ -502,7 +505,9 @@ const StageGrid: React.FC<StageGridProps> = ({
                 data-resize-handle
                 aria-label="회전"
                 title="드래그하여 회전 (Shift: 15° 단위)"
-                className="absolute -top-7 left-1/2 -translate-x-1/2 w-5 h-5 bg-secondary rounded-full cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 data-[selected=true]:opacity-100 transition-opacity shadow ring-2 ring-background touch-none flex items-center justify-center"
+                className={`absolute left-1/2 -translate-x-1/2 w-5 h-5 bg-secondary rounded-full cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 data-[selected=true]:opacity-100 transition-opacity shadow ring-2 ring-background touch-none flex items-center justify-center ${
+                  rotateBelow ? "-bottom-7" : "-top-7"
+                }`}
                 data-selected={isSelected ? "true" : undefined}
                 onPointerDown={(e) => beginRotate(e, el.id)}
               >

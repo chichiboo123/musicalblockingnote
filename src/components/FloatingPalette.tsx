@@ -11,6 +11,7 @@ interface FloatingPaletteProps {
   colors: string[];
   paths?: RecommendedPath[];
   customPatterns?: { id: string; svg: string }[];
+  onDeletePattern?: (id: string) => void;
   onOpenDrawing?: () => void;
 }
 
@@ -25,6 +26,7 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
   colors,
   paths,
   customPatterns,
+  onDeletePattern,
   onOpenDrawing,
 }) => {
   const [open, setOpen] = useState(false);
@@ -140,11 +142,22 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
                   {customPatterns?.length ? (
                     <div className="flex flex-wrap gap-2">
                       {customPatterns.map((p) => (
-                        <DraggableElement key={`fp-${p.id}`} id={p.id} type="custom" svg={p.svg}>
-                          <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
-                            <div dangerouslySetInnerHTML={{ __html: p.svg }} className="w-full h-full" />
-                          </div>
-                        </DraggableElement>
+                        <div key={`fp-${p.id}`} className="relative group">
+                          <DraggableElement id={p.id} type="custom" svg={p.svg}>
+                            <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
+                              <div dangerouslySetInnerHTML={{ __html: p.svg }} className="w-full h-full" />
+                            </div>
+                          </DraggableElement>
+                          {onDeletePattern && (
+                            <button
+                              onClick={() => onDeletePattern(p.id)}
+                              aria-label="패턴 삭제"
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   ) : (
