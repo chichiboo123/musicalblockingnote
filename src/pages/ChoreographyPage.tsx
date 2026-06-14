@@ -2,12 +2,20 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Plus, Trash2, Download, Upload, Image, FileText,
-  Undo2, Redo2, RotateCcw, X,
+  Undo2, Redo2, RotateCcw, Crosshair, HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import { Toggle } from "@/components/ui/toggle";
+import FloatingPalette from "@/components/FloatingPalette";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -16,13 +24,11 @@ import { useToast } from "@/hooks/use-toast";
 import { usePersistentState, clearPersistentState, useSaveStatus } from "@/hooks/use-persistent-state";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import StageGrid from "@/components/StageGrid";
-import DraggableElement from "@/components/DraggableElement";
-import PersonIcon from "@/components/PersonIcon";
 import DrawingCanvas from "@/components/DrawingCanvas";
 import BlockingContextMenu from "@/components/BlockingContextMenu";
 import { recommendedPaths } from "@/components/RecommendedPaths";
 import { exportAsJPG, exportAsPDF } from "@/utils/exportUtils";
-import { readableTextColor, sanitizeFilename } from "@/lib/utils";
+import { sanitizeFilename } from "@/lib/utils";
 import dancingIcon from "@/assets/dancing-icon.png";
 import type { BlockingElement, VerseSection, CustomPattern, ContextMenuState, BlockingState } from "@/types/blocking";
 import { CHARACTER_COLORS as COLORS } from "@/types/blocking";
@@ -51,8 +57,10 @@ const ChoreographyPage: React.FC = () => {
   });
   const [copiedElement, setCopiedElement] = useState<BlockingElement | null>(null);
   const [showDrawing, setShowDrawing] = useState(false);
+  const [showGuides, setShowGuides] = usePersistentState(`${STORAGE_KEY}:guides`, true);
 
   const sectionRefs = useRef<React.RefObject<HTMLDivElement>[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveState = useCallback(() => {
     history.push({ title, characters, verseSections, customPatterns });
@@ -114,6 +122,22 @@ const ChoreographyPage: React.FC = () => {
           ...updated[sectionIndex],
           blockingElements: updated[sectionIndex].blockingElements.map((el) =>
             el.id === elementId ? { ...el, size } : el
+          ),
+        };
+        return updated;
+      });
+    },
+    [setVerseSections]
+  );
+
+  const handleElementRotate = useCallback(
+    (elementId: string, rotation: number, sectionIndex: number) => {
+      setVerseSections((prev) => {
+        const updated = [...prev];
+        updated[sectionIndex] = {
+          ...updated[sectionIndex],
+          blockingElements: updated[sectionIndex].blockingElements.map((el) =>
+            el.id === elementId ? { ...el, rotation } : el
           ),
         };
         return updated;
@@ -206,8 +230,17 @@ const ChoreographyPage: React.FC = () => {
     if (ref) exportAsJPG(ref, `${title || "verse"}-${index + 1}`);
   };
 
+  const handleExportAllJPG = async () => {
+    for (let i = 0; i < sectionRefs.current.length; i++) {
+      const ref = sectionRefs.current[i];
+      if (ref?.current) await exportAsJPG(ref, `${title || "verse"}-${i + 1}`);
+    }
+    toast({ title: `이미지 ${verseSections.length}장을 저장했습니다` });
+  };
+
   const handleExportPDF = () => {
     exportAsPDF(sectionRefs.current.filter(Boolean), title || "choreography");
+    toast({ title: "PDF로 저장했습니다" });
   };
 
   const handleUndo = useCallback(() => {
@@ -346,36 +379,84 @@ const ChoreographyPage: React.FC = () => {
           )}
           <div className="flex-1" />
           <div className="flex gap-1.5 flex-wrap items-center">
-            {iconBtn(<Undo2 className="w-3.5 h-3.5" />, "되돌리기 (Ctrl+Z)", handleUndo, { disabled: !history.canUndo })}
-            {iconBtn(<Redo2 className="w-3.5 h-3.5" />, "다시 실행 (Ctrl+Y)", handleRedo, { disabled: !history.canRedo })}
-            <div className="h-5 w-px bg-border mx-0.5" />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleDownloadJSON}>
-                  <Download className="w-3.5 h-3.5 mr-1" /> 파일 저장
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>현재 작업을 JSON 파일로 저장</TooltipContent>
-            </Tooltip>
-            <label>
-              <input type="file" accept=".json" className="hidden" onChange={handleUploadJSON} />
+            <Dialog>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" asChild>
-                    <span><Upload className="w-3.5 h-3.5 mr-1" /> 불러오기</span>
-                  </Button>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="sm" aria-label="도움말">
+                      <HelpCircle className="w-4 h-4 mr-1" /> 도움말
+                    </Button>
+                  </DialogTrigger>
                 </TooltipTrigger>
-                <TooltipContent>저장한 JSON 파일을 불러옵니다</TooltipContent>
+                <TooltipContent>사용법과 단축키 보기</TooltipContent>
               </Tooltip>
-            </label>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>사용법 안내</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <ol className="space-y-2 list-decimal list-inside marker:text-primary marker:font-semibold">
+                    <li>위에 <strong className="text-foreground">제목과 캐릭터 이름</strong>을 입력하세요.</li>
+                    <li>화면 아래 <strong className="text-foreground">요소 추가</strong> 버튼을 눌러 캐릭터·경로·패턴을 무대로 끌어다 놓으세요.</li>
+                    <li>요소를 <strong className="text-foreground">드래그로 이동</strong>, 모서리로 <strong className="text-foreground">크기 조절</strong>, 위쪽 손잡이로 <strong className="text-foreground">회전</strong>합니다.</li>
+                    <li>중앙 안내선(<Crosshair className="inline w-3.5 h-3.5" />)에 가까이 가면 <strong className="text-foreground">자동으로 가운데에 정렬</strong>됩니다.</li>
+                    <li>완성하면 <strong className="text-foreground">내보내기</strong>로 이미지·PDF·파일로 저장하세요. 작업은 자동 저장됩니다.</li>
+                  </ol>
+                  <div>
+                    <p className="font-semibold text-foreground mb-2">단축키</p>
+                    <ul className="space-y-1.5">
+                      <li>되돌리기 <kbd>Ctrl+Z</kbd> · 다시 실행 <kbd>Ctrl+Y</kbd></li>
+                      <li>요소 삭제 <kbd>Del</kbd></li>
+                      <li>요소 이동 <kbd>방향키</kbd> (<kbd>Shift</kbd> 크게)</li>
+                      <li>요소 회전 <kbd>[</kbd> <kbd>]</kbd> (<kbd>Shift</kbd> 미세)</li>
+                    </ul>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+            {iconBtn(<Undo2 className="w-3.5 h-3.5" />, "되돌리기 (Ctrl+Z)", handleUndo, { disabled: !history.canUndo })}
+            {iconBtn(<Redo2 className="w-3.5 h-3.5" />, "다시 실행 (Ctrl+Y)", handleRedo, { disabled: !history.canRedo })}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleExportPDF}>
-                  <FileText className="w-3.5 h-3.5 mr-1" /> PDF
-                </Button>
+                <Toggle
+                  size="sm"
+                  pressed={showGuides}
+                  onPressedChange={setShowGuides}
+                  aria-label="중앙 안내선 표시"
+                  className="h-9 px-2"
+                >
+                  <Crosshair className="w-3.5 h-3.5" />
+                </Toggle>
               </TooltipTrigger>
-              <TooltipContent>전체 절을 PDF로 내보내기</TooltipContent>
+              <TooltipContent>중앙 안내선 {showGuides ? "끄기" : "켜기"}</TooltipContent>
             </Tooltip>
+            <div className="h-5 w-px bg-border mx-0.5" />
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="default" size="sm">
+                      <Download className="w-3.5 h-3.5 mr-1" /> 내보내기
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>이미지·PDF·파일로 저장</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="w-4 h-4 mr-2" /> 전체 PDF로 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportAllJPG}>
+                  <Image className="w-4 h-4 mr-2" /> 절별 이미지(JPG) 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadJSON}>
+                  <Download className="w-4 h-4 mr-2" /> 작업 파일(JSON) 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="w-4 h-4 mr-2" /> 작업 파일 불러오기
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Tooltip>
@@ -404,7 +485,9 @@ const ChoreographyPage: React.FC = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
+      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleUploadJSON} />
+
+      <main className="container mx-auto px-4 py-6 pb-28">
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">프로젝트 제목</label>
@@ -418,92 +501,14 @@ const ChoreographyPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[260px_1fr] gap-6">
-          <aside className="space-y-4">
-            <div className="section-card">
-              <h3 className="text-sm font-semibold text-foreground mb-2">캐릭터</h3>
-              {characterList.length === 0 ? (
-                <p className="text-xs text-muted-foreground">위에서 캐릭터 이름을 입력하세요</p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground mb-2">아이콘을 무대로 끌어다 놓으세요</p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {characterList.map((name, i) => (
-                  <DraggableElement key={`char-${i}`} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
-                    <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
-                    <span className="text-xs font-medium" style={{ color: readableTextColor(COLORS[i % COLORS.length]) }}>{name}</span>
-                  </DraggableElement>
-                ))}
-              </div>
-            </div>
-
-            <div className="section-card">
-              <h3 className="text-sm font-semibold text-foreground mb-2">권장 경로</h3>
-              <p className="text-[11px] text-muted-foreground mb-2">패턴을 무대로 끌어다 놓으세요</p>
-              <div className="grid grid-cols-2 gap-2">
-                {recommendedPaths.map((path) => (
-                  <DraggableElement key={path.id} id={path.id} type="path" svg={path.svg}>
-                    <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
-                      <div dangerouslySetInnerHTML={{ __html: path.svg }} className="w-full h-full" />
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">{path.name}</span>
-                  </DraggableElement>
-                ))}
-              </div>
-            </div>
-
-            <div className="section-card">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold text-foreground">사용자 패턴</h3>
-                <Button variant="outline" size="sm" onClick={() => setShowDrawing(!showDrawing)}>
-                  {showDrawing ? "닫기" : "그리기"}
-                </Button>
-              </div>
-              {showDrawing && <DrawingCanvas onSavePattern={handleCreatePattern} />}
-              {customPatterns.length === 0 && !showDrawing && (
-                <p className="text-[11px] text-muted-foreground">아직 저장된 패턴이 없습니다</p>
-              )}
-              <div className="flex flex-wrap gap-2 mt-2">
-                {customPatterns.map((p) => (
-                  <div key={p.id} className="relative group">
-                    <DraggableElement id={p.id} type="custom" svg={p.svg}>
-                      <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
-                        <div dangerouslySetInnerHTML={{ __html: p.svg }} className="w-full h-full" />
-                      </div>
-                    </DraggableElement>
-                    <button
-                      onClick={() => handleDeletePattern(p.id)}
-                      aria-label="패턴 삭제"
-                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[10px] shadow"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="section-card text-xs text-muted-foreground leading-relaxed">
-              <p className="font-semibold text-foreground mb-2">사용법</p>
-              <ol className="space-y-1.5 list-decimal list-inside marker:text-primary marker:font-semibold">
-                <li>위에 제목과 캐릭터 이름을 입력하세요.</li>
-                <li>아이콘·경로를 무대로 끌어다 놓으세요.</li>
-                <li>드래그로 이동, 모서리로 크기를 조절하세요.</li>
-                <li>우클릭하면 복사·붙여넣기·삭제할 수 있어요.</li>
-                <li>이미지·PDF로 내보내거나 파일로 저장하세요.</li>
-              </ol>
-            </div>
-
-            <div className="section-card text-xs text-muted-foreground leading-relaxed">
-              <p className="font-semibold text-foreground mb-2">단축키</p>
-              <ul className="space-y-1">
-                <li>· 되돌리기 <kbd className="font-mono">Ctrl+Z</kbd></li>
-                <li>· 다시 실행 <kbd className="font-mono">Ctrl+Y</kbd></li>
-                <li>· 요소 삭제 <kbd className="font-mono">Del</kbd></li>
-                <li>· 요소 이동 <kbd className="font-mono">방향키</kbd> (Shift: 크게)</li>
-              </ul>
-            </div>
-          </aside>
+        <div className="max-w-3xl mx-auto">
+          <div className="rounded-xl bg-muted/50 border border-border px-4 py-2.5 mb-5 text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+            <Plus className="w-4 h-4 text-primary shrink-0" />
+            <span>
+              화면 아래 <strong className="text-foreground">요소 추가</strong> 버튼으로 캐릭터·경로를 꺼내 무대로 끌어다 놓으세요.
+              자세한 사용법은 상단 <strong className="text-foreground">도움말</strong>을 확인하세요.
+            </span>
+          </div>
 
           <div className="space-y-6">
             {verseSections.map((section, index) => (
@@ -544,8 +549,10 @@ const ChoreographyPage: React.FC = () => {
                   onElementMove={handleElementMove}
                   onElementRemove={handleElementRemove}
                   onElementResize={handleElementResize}
+                  onElementRotate={handleElementRotate}
                   onContextMenu={setContextMenu}
                   onMoveStart={saveState}
+                  showCenterGuides={showGuides}
                 />
               </div>
             ))}
@@ -556,6 +563,24 @@ const ChoreographyPage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      <FloatingPalette
+        characters={characterList}
+        colors={COLORS}
+        paths={recommendedPaths}
+        customPatterns={customPatterns}
+        onDeletePattern={handleDeletePattern}
+        onOpenDrawing={() => setShowDrawing(true)}
+      />
+
+      <Dialog open={showDrawing} onOpenChange={setShowDrawing}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>패턴 그리기</DialogTitle>
+          </DialogHeader>
+          <DrawingCanvas onSavePattern={handleCreatePattern} />
+        </DialogContent>
+      </Dialog>
 
       <BlockingContextMenu
         show={contextMenu.show}

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
+import { RotateCw } from "lucide-react";
 import { readableTextColor } from "@/lib/utils";
 import type { BlockingElement, ContextMenuState } from "@/types/blocking";
 
@@ -9,10 +10,14 @@ interface StageGridProps {
   onElementMove: (elementId: string, position: { x: number; y: number }, sectionIndex: number) => void;
   onElementRemove: (elementId: string, sectionIndex: number) => void;
   onElementResize?: (elementId: string, size: { width: number; height: number }, sectionIndex: number) => void;
+  onElementRotate?: (elementId: string, rotation: number, sectionIndex: number) => void;
   onContextMenu?: (state: ContextMenuState) => void;
   onMoveStart?: () => void;
   compact?: boolean;
+  showCenterGuides?: boolean;
 }
+
+const SNAP_THRESHOLD = 6; // px tolerance for snapping an element's center to the stage center
 
 const STAGE_LABELS = [
   ["UL", "UC", "UR"],
@@ -33,9 +38,11 @@ const StageGrid: React.FC<StageGridProps> = ({
   onElementMove,
   onElementRemove,
   onElementResize,
+  onElementRotate,
   onContextMenu,
   onMoveStart,
   compact = false,
+  showCenterGuides = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -43,7 +50,10 @@ const StageGrid: React.FC<StageGridProps> = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
+  // Which center axis the dragged element is currently snapped to (for live guide lines)
+  const [snap, setSnap] = useState<{ x: boolean; y: boolean }>({ x: false, y: false });
   const movedRef = useRef(false);
 
   const setSelectedId = useCallback(
@@ -219,10 +229,46 @@ const StageGrid: React.FC<StageGridProps> = ({
     }
   };
 
+  const beginRotate = (e: React.PointerEvent, elementId: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const el = elements.find((el) => el.id === elementId);
+    if (!el) return;
+    setRotatingId(elementId);
+    setSelectedId(elementId);
+    movedRef.current = false;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
+      if (rotatingId && onElementRotate) {
+        const el = elements.find((el) => el.id === rotatingId);
+        if (!el) return;
+        const w = el.size?.width || 30;
+        const h = el.size?.height || 30;
+        const cx = rect.left + el.position.x + w / 2;
+        const cy = rect.top + el.position.y + h / 2;
+        let deg = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI + 90;
+        // Snap to 15° steps with Shift; otherwise gently snap near the cardinal angles
+        if (e.shiftKey) {
+          deg = Math.round(deg / 15) * 15;
+        } else {
+          const nearest = Math.round(deg / 90) * 90;
+          if (Math.abs(deg - nearest) < 6) deg = nearest;
+        }
+        deg = ((deg % 360) + 360) % 360;
+        if (!movedRef.current) onMoveStart?.();
+        movedRef.current = true;
+        onElementRotate(rotatingId, Math.round(deg), sectionIndex);
+        return;
+      }
       if (resizingId && onElementResize) {
         const dx = e.clientX - resizeStart.x;
         const dy = e.clientY - resizeStart.y;
@@ -241,18 +287,28 @@ const StageGrid: React.FC<StageGridProps> = ({
       const rawX = e.clientX - rect.left - dragOffset.x;
       const rawY = e.clientY - rect.top - dragOffset.y;
       const pos = clampPosition(rawX, rawY, w, h);
+      // Canva-style snapping: align the element's center to the stage center
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const snappedX = Math.abs(pos.x + w / 2 - centerX) <= SNAP_THRESHOLD;
+      const snappedY = Math.abs(pos.y + h / 2 - centerY) <= SNAP_THRESHOLD;
+      if (snappedX) pos.x = centerX - w / 2;
+      if (snappedY) pos.y = centerY - h / 2;
+      setSnap((prev) => (prev.x === snappedX && prev.y === snappedY ? prev : { x: snappedX, y: snappedY }));
       if (!movedRef.current) onMoveStart?.();
       movedRef.current = true;
       cancelLongPress();
       onElementMove(draggingId, pos, sectionIndex);
     },
-    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize, elements, clampPosition, cancelLongPress, onMoveStart]
+    [draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart, onElementResize, rotatingId, onElementRotate, elements, clampPosition, cancelLongPress, onMoveStart]
   );
 
   const handlePointerUp = () => {
     cancelLongPress();
     setDraggingId(null);
     setResizingId(null);
+    setRotatingId(null);
+    setSnap({ x: false, y: false });
     movedRef.current = false;
   };
 
@@ -304,6 +360,15 @@ const StageGrid: React.FC<StageGridProps> = ({
         setSelectedId(null);
       } else if (e.key === "Escape") {
         setSelectedId(null);
+      } else if ((e.key === "[" || e.key === "]") && onElementRotate) {
+        const el = elements.find((el) => el.id === selectedId);
+        if (!el) return;
+        e.preventDefault();
+        onMoveStart?.();
+        const step = e.shiftKey ? 1 : 15;
+        const current = el.rotation || 0;
+        const next = (((current + (e.key === "]" ? step : -step)) % 360) + 360) % 360;
+        onElementRotate(selectedId, next, sectionIndex);
       } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
         const el = elements.find((el) => el.id === selectedId);
         if (!el) return;
@@ -332,7 +397,7 @@ const StageGrid: React.FC<StageGridProps> = ({
     return () => window.removeEventListener("keydown", onKey);
     // setSelectedId is stable enough (depends only on sectionIndex which is in deps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, elements, onElementRemove, onElementMove, sectionIndex, clampPosition, onMoveStart]);
+  }, [selectedId, elements, onElementRemove, onElementMove, onElementRotate, sectionIndex, clampPosition, onMoveStart]);
 
   return (
     <div className={`mx-auto my-3 flex w-full flex-col items-center gap-1 ${compact ? "max-w-[320px]" : "max-w-[460px]"}`}>
@@ -367,10 +432,29 @@ const StageGrid: React.FC<StageGridProps> = ({
         ))}
       </div>
 
+      {/* Center guide lines (optional aid, hidden from exports) */}
+      {showCenterGuides && (
+        <div className="absolute inset-0 pointer-events-none z-[5]" data-export-hidden>
+          <div className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 border-l border-dashed border-primary/40" />
+          <div className="absolute top-1/2 left-0 right-0 h-px -translate-y-1/2 border-t border-dashed border-primary/40" />
+        </div>
+      )}
+
+      {/* Live snap guides while dragging toward the center */}
+      {snap.x && (
+        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 -translate-x-1/2 bg-secondary z-[15] pointer-events-none" data-export-hidden />
+      )}
+      {snap.y && (
+        <div className="absolute top-1/2 left-0 right-0 h-0.5 -translate-y-1/2 bg-secondary z-[15] pointer-events-none" data-export-hidden />
+      )}
+
       {/* Elements */}
       {elements.map((el) => {
         const isPathOrCustom = el.type === "path" || el.type === "custom";
         const isSelected = selectedId === el.id;
+        // Flip the rotate handle below the element when there isn't enough room
+        // above it, so the clipped stage edge never hides the handle.
+        const rotateBelow = el.position.y < 30;
         return (
           <div
             key={el.id}
@@ -414,6 +498,21 @@ const StageGrid: React.FC<StageGridProps> = ({
                 className="w-full h-full pointer-events-none"
                 dangerouslySetInnerHTML={{ __html: el.svg || "" }}
               />
+            )}
+            {/* Rotate handle (all elements) */}
+            {onElementRotate && (
+              <div
+                data-resize-handle
+                aria-label="회전"
+                title="드래그하여 회전 (Shift: 15° 단위)"
+                className={`absolute left-1/2 -translate-x-1/2 w-5 h-5 bg-secondary rounded-full cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 data-[selected=true]:opacity-100 transition-opacity shadow ring-2 ring-background touch-none flex items-center justify-center ${
+                  rotateBelow ? "-bottom-7" : "-top-7"
+                }`}
+                data-selected={isSelected ? "true" : undefined}
+                onPointerDown={(e) => beginRotate(e, el.id)}
+              >
+                <RotateCw className="w-3 h-3 text-secondary-foreground" />
+              </div>
             )}
             {/* Resize handle for path/custom in choreography */}
             {isPathOrCustom && onElementResize && (

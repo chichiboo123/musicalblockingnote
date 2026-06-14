@@ -2,12 +2,20 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Plus, Trash2, Download, Upload, Image, FileText,
-  Undo2, Redo2, RotateCcw,
+  Undo2, Redo2, RotateCcw, Crosshair, HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import { Toggle } from "@/components/ui/toggle";
+import FloatingPalette from "@/components/FloatingPalette";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -16,11 +24,9 @@ import { useToast } from "@/hooks/use-toast";
 import { usePersistentState, clearPersistentState, useSaveStatus } from "@/hooks/use-persistent-state";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import StageGrid from "@/components/StageGrid";
-import DraggableElement from "@/components/DraggableElement";
-import PersonIcon from "@/components/PersonIcon";
 import BlockingContextMenu from "@/components/BlockingContextMenu";
 import { exportAsJPG, exportAsPDF } from "@/utils/exportUtils";
-import { readableTextColor, sanitizeFilename } from "@/lib/utils";
+import { sanitizeFilename } from "@/lib/utils";
 import dancingIcon from "@/assets/dancing-icon.png";
 import type { BlockingElement, SceneSection, ContextMenuState } from "@/types/blocking";
 import { CHARACTER_COLORS as COLORS } from "@/types/blocking";
@@ -50,8 +56,10 @@ const ScenePage: React.FC = () => {
     show: false, x: 0, y: 0, targetId: null, sectionIndex: 0,
   });
   const [copiedElement, setCopiedElement] = useState<BlockingElement | null>(null);
+  const [showGuides, setShowGuides] = usePersistentState(`${STORAGE_KEY}:guides`, true);
 
   const sectionRefs = useRef<React.RefObject<HTMLDivElement>[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveState = useCallback(() => {
     history.push({ title, characters, sceneSections });
@@ -103,6 +111,22 @@ const ScenePage: React.FC = () => {
       });
     },
     [saveState, setSceneSections]
+  );
+
+  const handleElementRotate = useCallback(
+    (elementId: string, rotation: number, sectionIndex: number) => {
+      setSceneSections((prev) => {
+        const updated = [...prev];
+        updated[sectionIndex] = {
+          ...updated[sectionIndex],
+          blockingElements: updated[sectionIndex].blockingElements.map((el) =>
+            el.id === elementId ? { ...el, rotation } : el
+          ),
+        };
+        return updated;
+      });
+    },
+    [setSceneSections]
   );
 
   const handleAddSection = () => {
@@ -172,8 +196,17 @@ const ScenePage: React.FC = () => {
     if (ref) exportAsJPG(ref, `${title || "scene"}-${index + 1}`);
   };
 
+  const handleExportAllJPG = async () => {
+    for (let i = 0; i < sectionRefs.current.length; i++) {
+      const ref = sectionRefs.current[i];
+      if (ref?.current) await exportAsJPG(ref, `${title || "scene"}-${i + 1}`);
+    }
+    toast({ title: `이미지 ${sceneSections.length}장을 저장했습니다` });
+  };
+
   const handleExportPDF = () => {
     exportAsPDF(sectionRefs.current.filter(Boolean), title || "scene");
+    toast({ title: "PDF로 저장했습니다" });
   };
 
   const handleCopy = () => {
@@ -293,36 +326,84 @@ const ScenePage: React.FC = () => {
           )}
           <div className="flex-1" />
           <div className="flex gap-1.5 flex-wrap items-center">
-            {iconBtn(<Undo2 className="w-3.5 h-3.5" />, "되돌리기 (Ctrl+Z)", handleUndo, !history.canUndo)}
-            {iconBtn(<Redo2 className="w-3.5 h-3.5" />, "다시 실행 (Ctrl+Y)", handleRedo, !history.canRedo)}
-            <div className="h-5 w-px bg-border mx-0.5" />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleDownloadJSON}>
-                  <Download className="w-3.5 h-3.5 mr-1" /> 파일 저장
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>현재 작업을 JSON 파일로 저장</TooltipContent>
-            </Tooltip>
-            <label>
-              <input type="file" accept=".json" className="hidden" onChange={handleUploadJSON} />
+            <Dialog>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" asChild>
-                    <span><Upload className="w-3.5 h-3.5 mr-1" /> 불러오기</span>
-                  </Button>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="sm" aria-label="도움말">
+                      <HelpCircle className="w-4 h-4 mr-1" /> 도움말
+                    </Button>
+                  </DialogTrigger>
                 </TooltipTrigger>
-                <TooltipContent>저장한 JSON 파일을 불러옵니다</TooltipContent>
+                <TooltipContent>사용법과 단축키 보기</TooltipContent>
               </Tooltip>
-            </label>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>사용법 안내</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
+                  <ol className="space-y-2 list-decimal list-inside marker:text-primary marker:font-semibold">
+                    <li>위에 <strong className="text-foreground">제목과 캐릭터 이름</strong>을 입력하세요.</li>
+                    <li>화면 아래 <strong className="text-foreground">요소 추가</strong> 버튼을 눌러 캐릭터를 무대로 끌어다 놓으세요.</li>
+                    <li>요소를 <strong className="text-foreground">드래그로 이동</strong>, 위쪽 손잡이로 <strong className="text-foreground">회전</strong>합니다.</li>
+                    <li>중앙 안내선(<Crosshair className="inline w-3.5 h-3.5" />)에 가까이 가면 <strong className="text-foreground">자동으로 가운데에 정렬</strong>됩니다.</li>
+                    <li>완성하면 <strong className="text-foreground">내보내기</strong>로 이미지·PDF·파일로 저장하세요. 작업은 자동 저장됩니다.</li>
+                  </ol>
+                  <div>
+                    <p className="font-semibold text-foreground mb-2">단축키</p>
+                    <ul className="space-y-1.5">
+                      <li>되돌리기 <kbd>Ctrl+Z</kbd> · 다시 실행 <kbd>Ctrl+Y</kbd></li>
+                      <li>요소 삭제 <kbd>Del</kbd></li>
+                      <li>요소 이동 <kbd>방향키</kbd> (<kbd>Shift</kbd> 크게)</li>
+                      <li>요소 회전 <kbd>[</kbd> <kbd>]</kbd> (<kbd>Shift</kbd> 미세)</li>
+                    </ul>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+            {iconBtn(<Undo2 className="w-3.5 h-3.5" />, "되돌리기 (Ctrl+Z)", handleUndo, !history.canUndo)}
+            {iconBtn(<Redo2 className="w-3.5 h-3.5" />, "다시 실행 (Ctrl+Y)", handleRedo, !history.canRedo)}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleExportPDF}>
-                  <FileText className="w-3.5 h-3.5 mr-1" /> PDF
-                </Button>
+                <Toggle
+                  size="sm"
+                  pressed={showGuides}
+                  onPressedChange={setShowGuides}
+                  aria-label="중앙 안내선 표시"
+                  className="h-9 px-2"
+                >
+                  <Crosshair className="w-3.5 h-3.5" />
+                </Toggle>
               </TooltipTrigger>
-              <TooltipContent>전체 장면을 PDF로 내보내기</TooltipContent>
+              <TooltipContent>중앙 안내선 {showGuides ? "끄기" : "켜기"}</TooltipContent>
             </Tooltip>
+            <div className="h-5 w-px bg-border mx-0.5" />
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="default" size="sm">
+                      <Download className="w-3.5 h-3.5 mr-1" /> 내보내기
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>이미지·PDF·파일로 저장</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="w-4 h-4 mr-2" /> 전체 PDF로 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportAllJPG}>
+                  <Image className="w-4 h-4 mr-2" /> 장면별 이미지(JPG) 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadJSON}>
+                  <Download className="w-4 h-4 mr-2" /> 작업 파일(JSON) 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="w-4 h-4 mr-2" /> 작업 파일 불러오기
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Tooltip>
@@ -351,7 +432,9 @@ const ScenePage: React.FC = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
+      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleUploadJSON} />
+
+      <main className="container mx-auto px-4 py-6 pb-28">
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">프로젝트 제목</label>
@@ -365,48 +448,16 @@ const ScenePage: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[220px_1fr] gap-6">
-          <aside className="space-y-4">
-            <div className="section-card">
-              <h3 className="text-sm font-semibold text-foreground mb-2">캐릭터</h3>
-              {characterList.length === 0 ? (
-                <p className="text-xs text-muted-foreground">캐릭터 이름을 입력하세요</p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground mb-2">아이콘을 무대로 끌어다 놓으세요</p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {characterList.map((name, i) => (
-                  <DraggableElement key={`char-${i}`} id={`char-${i}`} type="character" color={COLORS[i % COLORS.length]} label={name}>
-                    <PersonIcon color={COLORS[i % COLORS.length]} size={20} />
-                    <span className="text-xs font-medium" style={{ color: readableTextColor(COLORS[i % COLORS.length]) }}>{name}</span>
-                  </DraggableElement>
-                ))}
-              </div>
-            </div>
+        <div>
+          <div className="rounded-xl bg-muted/50 border border-border px-4 py-2.5 mb-5 text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+            <Plus className="w-4 h-4 text-primary shrink-0" />
+            <span>
+              화면 아래 <strong className="text-foreground">요소 추가</strong> 버튼으로 캐릭터를 꺼내 무대로 끌어다 놓으세요.
+              자세한 사용법은 상단 <strong className="text-foreground">도움말</strong>을 확인하세요.
+            </span>
+          </div>
 
-            <div className="section-card text-xs text-muted-foreground leading-relaxed">
-              <p className="font-semibold text-foreground mb-2">사용법</p>
-              <ol className="space-y-1.5 list-decimal list-inside marker:text-primary marker:font-semibold">
-                <li>위에 제목과 캐릭터 이름을 입력하세요.</li>
-                <li>아이콘을 무대로 끌어다 놓으세요.</li>
-                <li>장면별로 대본과 배치를 기록하세요.</li>
-                <li>우클릭하면 복사·붙여넣기·삭제할 수 있어요.</li>
-                <li>이미지·PDF로 내보내거나 파일로 저장하세요.</li>
-              </ol>
-            </div>
-
-            <div className="section-card text-xs text-muted-foreground leading-relaxed">
-              <p className="font-semibold text-foreground mb-2">단축키</p>
-              <ul className="space-y-1">
-                <li>· 되돌리기 <kbd className="font-mono">Ctrl+Z</kbd></li>
-                <li>· 다시 실행 <kbd className="font-mono">Ctrl+Y</kbd></li>
-                <li>· 요소 삭제 <kbd className="font-mono">Del</kbd></li>
-                <li>· 요소 이동 <kbd className="font-mono">방향키</kbd> (Shift: 크게)</li>
-              </ul>
-            </div>
-          </aside>
-
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {sceneSections.map((section, index) => (
               <div key={section.id} ref={sectionRefs.current[index]} className="section-card p-3">
                 <div className="flex items-center justify-between mb-2">
@@ -444,8 +495,10 @@ const ScenePage: React.FC = () => {
                   onElementDrop={handleElementDrop}
                   onElementMove={handleElementMove}
                   onElementRemove={handleElementRemove}
+                  onElementRotate={handleElementRotate}
                   onContextMenu={setContextMenu}
                   onMoveStart={saveState}
+                  showCenterGuides={showGuides}
                   compact
                 />
               </div>
@@ -457,6 +510,8 @@ const ScenePage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      <FloatingPalette characters={characterList} colors={COLORS} />
 
       <BlockingContextMenu
         show={contextMenu.show}
