@@ -2,12 +2,17 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Plus, Trash2, Download, Upload, Image, FileText,
-  Undo2, Redo2, RotateCcw,
+  Undo2, Redo2, RotateCcw, Crosshair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Toggle } from "@/components/ui/toggle";
+import FloatingPalette from "@/components/FloatingPalette";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -50,8 +55,10 @@ const ScenePage: React.FC = () => {
     show: false, x: 0, y: 0, targetId: null, sectionIndex: 0,
   });
   const [copiedElement, setCopiedElement] = useState<BlockingElement | null>(null);
+  const [showGuides, setShowGuides] = usePersistentState(`${STORAGE_KEY}:guides`, true);
 
   const sectionRefs = useRef<React.RefObject<HTMLDivElement>[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const saveState = useCallback(() => {
     history.push({ title, characters, sceneSections });
@@ -103,6 +110,22 @@ const ScenePage: React.FC = () => {
       });
     },
     [saveState, setSceneSections]
+  );
+
+  const handleElementRotate = useCallback(
+    (elementId: string, rotation: number, sectionIndex: number) => {
+      setSceneSections((prev) => {
+        const updated = [...prev];
+        updated[sectionIndex] = {
+          ...updated[sectionIndex],
+          blockingElements: updated[sectionIndex].blockingElements.map((el) =>
+            el.id === elementId ? { ...el, rotation } : el
+          ),
+        };
+        return updated;
+      });
+    },
+    [setSceneSections]
   );
 
   const handleAddSection = () => {
@@ -172,8 +195,17 @@ const ScenePage: React.FC = () => {
     if (ref) exportAsJPG(ref, `${title || "scene"}-${index + 1}`);
   };
 
+  const handleExportAllJPG = async () => {
+    for (let i = 0; i < sectionRefs.current.length; i++) {
+      const ref = sectionRefs.current[i];
+      if (ref?.current) await exportAsJPG(ref, `${title || "scene"}-${i + 1}`);
+    }
+    toast({ title: `이미지 ${sceneSections.length}장을 저장했습니다` });
+  };
+
   const handleExportPDF = () => {
     exportAsPDF(sectionRefs.current.filter(Boolean), title || "scene");
+    toast({ title: "PDF로 저장했습니다" });
   };
 
   const handleCopy = () => {
@@ -295,34 +327,47 @@ const ScenePage: React.FC = () => {
           <div className="flex gap-1.5 flex-wrap items-center">
             {iconBtn(<Undo2 className="w-3.5 h-3.5" />, "되돌리기 (Ctrl+Z)", handleUndo, !history.canUndo)}
             {iconBtn(<Redo2 className="w-3.5 h-3.5" />, "다시 실행 (Ctrl+Y)", handleRedo, !history.canRedo)}
-            <div className="h-5 w-px bg-border mx-0.5" />
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleDownloadJSON}>
-                  <Download className="w-3.5 h-3.5 mr-1" /> 파일 저장
-                </Button>
+                <Toggle
+                  size="sm"
+                  pressed={showGuides}
+                  onPressedChange={setShowGuides}
+                  aria-label="중앙 안내선 표시"
+                  className="h-9 px-2"
+                >
+                  <Crosshair className="w-3.5 h-3.5" />
+                </Toggle>
               </TooltipTrigger>
-              <TooltipContent>현재 작업을 JSON 파일로 저장</TooltipContent>
+              <TooltipContent>중앙 안내선 {showGuides ? "끄기" : "켜기"}</TooltipContent>
             </Tooltip>
-            <label>
-              <input type="file" accept=".json" className="hidden" onChange={handleUploadJSON} />
+            <div className="h-5 w-px bg-border mx-0.5" />
+            <DropdownMenu>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" asChild>
-                    <span><Upload className="w-3.5 h-3.5 mr-1" /> 불러오기</span>
-                  </Button>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="default" size="sm">
+                      <Download className="w-3.5 h-3.5 mr-1" /> 내보내기
+                    </Button>
+                  </DropdownMenuTrigger>
                 </TooltipTrigger>
-                <TooltipContent>저장한 JSON 파일을 불러옵니다</TooltipContent>
+                <TooltipContent>이미지·PDF·파일로 저장</TooltipContent>
               </Tooltip>
-            </label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleExportPDF}>
-                  <FileText className="w-3.5 h-3.5 mr-1" /> PDF
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>전체 장면을 PDF로 내보내기</TooltipContent>
-            </Tooltip>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="w-4 h-4 mr-2" /> 전체 PDF로 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportAllJPG}>
+                  <Image className="w-4 h-4 mr-2" /> 장면별 이미지(JPG) 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadJSON}>
+                  <Download className="w-4 h-4 mr-2" /> 작업 파일(JSON) 저장
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="w-4 h-4 mr-2" /> 작업 파일 불러오기
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Tooltip>
@@ -351,7 +396,9 @@ const ScenePage: React.FC = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
+      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleUploadJSON} />
+
+      <main className="container mx-auto px-4 py-6 pb-28">
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">프로젝트 제목</label>
@@ -388,9 +435,9 @@ const ScenePage: React.FC = () => {
               <p className="font-semibold text-foreground mb-2">사용법</p>
               <ol className="space-y-1.5 list-decimal list-inside marker:text-primary marker:font-semibold">
                 <li>위에 제목과 캐릭터 이름을 입력하세요.</li>
-                <li>아이콘을 무대로 끌어다 놓으세요.</li>
-                <li>장면별로 대본과 배치를 기록하세요.</li>
-                <li>우클릭하면 복사·붙여넣기·삭제할 수 있어요.</li>
+                <li>아이콘을 무대로 끌어다 놓으세요. 화면 아래 <strong className="text-foreground">요소 추가</strong> 버튼으로 어디서든 꺼낼 수 있어요.</li>
+                <li>드래그로 이동, 위쪽 손잡이로 회전하세요.</li>
+                <li>중앙 안내선에 가까이 가면 자동으로 가운데에 맞춰집니다.</li>
                 <li>이미지·PDF로 내보내거나 파일로 저장하세요.</li>
               </ol>
             </div>
@@ -402,6 +449,7 @@ const ScenePage: React.FC = () => {
                 <li>· 다시 실행 <kbd className="font-mono">Ctrl+Y</kbd></li>
                 <li>· 요소 삭제 <kbd className="font-mono">Del</kbd></li>
                 <li>· 요소 이동 <kbd className="font-mono">방향키</kbd> (Shift: 크게)</li>
+                <li>· 요소 회전 <kbd className="font-mono">[</kbd> <kbd className="font-mono">]</kbd> (Shift: 미세)</li>
               </ul>
             </div>
           </aside>
@@ -444,8 +492,10 @@ const ScenePage: React.FC = () => {
                   onElementDrop={handleElementDrop}
                   onElementMove={handleElementMove}
                   onElementRemove={handleElementRemove}
+                  onElementRotate={handleElementRotate}
                   onContextMenu={setContextMenu}
                   onMoveStart={saveState}
+                  showCenterGuides={showGuides}
                   compact
                 />
               </div>
@@ -457,6 +507,8 @@ const ScenePage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      <FloatingPalette characters={characterList} colors={COLORS} />
 
       <BlockingContextMenu
         show={contextMenu.show}
