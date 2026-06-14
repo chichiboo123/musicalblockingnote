@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Music, Film, Play } from "lucide-react";
+import { Music, Film, Play, MousePointerClick, Download } from "lucide-react";
 import dancingIcon from "@/assets/dancing-icon.png";
 
 const MainPage = () => {
@@ -103,6 +103,47 @@ const MainPage = () => {
           </motion.div>
         </div>
 
+        {/* How to use */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35, duration: 0.5 }}
+          className="max-w-3xl mx-auto mb-16"
+        >
+          <h3 className="text-center text-lg font-bold text-foreground mb-6">사용법 3단계</h3>
+          <ol className="grid sm:grid-cols-3 gap-4">
+            {[
+              {
+                icon: <MousePointerClick className="w-6 h-6 text-primary" />,
+                step: "1",
+                title: "캐릭터 만들기",
+                desc: "제목과 캐릭터 이름을 입력하면 색깔 아이콘이 자동으로 만들어집니다.",
+              },
+              {
+                icon: <Music className="w-6 h-6 text-primary" />,
+                step: "2",
+                title: "무대에 배치하기",
+                desc: "아이콘과 경로를 무대로 끌어다 놓고 위치·크기를 자유롭게 조절하세요.",
+              },
+              {
+                icon: <Download className="w-6 h-6 text-primary" />,
+                step: "3",
+                title: "저장·내보내기",
+                desc: "작업은 자동 저장되며, 이미지(JPG)·PDF·파일(JSON)로 내보낼 수 있습니다.",
+              },
+            ].map((item) => (
+              <li key={item.step} className="section-card flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
+                  {item.icon}
+                </div>
+                <span className="text-xs font-bold text-primary mb-1">STEP {item.step}</span>
+                <h4 className="text-base font-bold text-foreground mb-1.5">{item.title}</h4>
+                <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+              </li>
+            ))}
+          </ol>
+        </motion.div>
+
         {/* YouTube Guide */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -135,29 +176,29 @@ const MainPage = () => {
           transition={{ delay: 0.5, duration: 0.5 }}
           className="max-w-sm mx-auto"
         >
-          <h3 className="text-center text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-widest">
+          <h3 className="text-center text-sm font-bold text-foreground mb-4">
             무대 구분 명칭
           </h3>
-          <div className="relative">
-            <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">
               무대 뒤 (Upstage)
-            </div>
-            <div className="stage-grid aspect-[3/2] grid grid-cols-3 grid-rows-3 text-center text-xs">
+            </span>
+            <div className="stage-grid w-full aspect-[3/2] grid grid-cols-3 grid-rows-3 text-center">
               {[
                 "Up Left (UL)", "Up Center (UC)", "Up Right (UR)",
                 "Stage Left (SL)", "Center Stage (CS)", "Stage Right (SR)",
                 "Down Left (DL)", "Down Center (DC)", "Down Right (DR)",
               ].map((label) => (
-                <div key={label} className="stage-grid-line border flex items-center justify-center p-2">
-                  <span className="stage-label text-[10px]">{label}</span>
+                <div key={label} className="stage-grid-line border flex items-center justify-center p-1.5">
+                  <span className="stage-label text-[11px] leading-tight">{label}</span>
                 </div>
               ))}
             </div>
-            <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+            <span className="text-xs font-medium text-muted-foreground">
               객석 (Downstage)
-            </div>
+            </span>
           </div>
-          <p className="text-[11px] text-muted-foreground text-center mt-8 leading-relaxed">
+          <p className="text-xs text-muted-foreground text-center mt-5 leading-relaxed">
             ※ 좌·우 방향은 <strong className="text-foreground">객석에서 무대를 본 시점</strong>을 기준으로 합니다.
           </p>
         </motion.div>
