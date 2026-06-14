@@ -13,6 +13,7 @@ interface StageGridProps {
   onElementRotate?: (elementId: string, rotation: number, sectionIndex: number) => void;
   onContextMenu?: (state: ContextMenuState) => void;
   onMoveStart?: () => void;
+  onActivate?: (sectionIndex: number) => void;
   compact?: boolean;
   showCenterGuides?: boolean;
 }
@@ -41,6 +42,7 @@ const StageGrid: React.FC<StageGridProps> = ({
   onElementRotate,
   onContextMenu,
   onMoveStart,
+  onActivate,
   compact = false,
   showCenterGuides = false,
 }) => {
@@ -128,8 +130,9 @@ const StageGrid: React.FC<StageGridProps> = ({
 
       onElementDrop(newElement, sectionIndex);
       setSelectedId(newElement.id);
+      onActivate?.(sectionIndex);
     },
-    [sectionIndex, onElementDrop, clampPosition, setSelectedId]
+    [sectionIndex, onElementDrop, clampPosition, setSelectedId, onActivate]
   );
 
   // Listen for touch-based drops dispatched from DraggableElement
@@ -148,6 +151,23 @@ const StageGrid: React.FC<StageGridProps> = ({
     node.addEventListener("blocking-touch-drop", onTouchDrop);
     return () => node.removeEventListener("blocking-touch-drop", onTouchDrop);
   }, [performDrop]);
+
+  // Click-to-add: insert an element at the stage center on request
+  useEffect(() => {
+    const onAddCenter = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.sectionIndex !== sectionIndex) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      performDrop(
+        { type: detail.type, svg: detail.svg, color: detail.color, label: detail.label },
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2
+      );
+    };
+    window.addEventListener("blocking-add-center", onAddCenter);
+    return () => window.removeEventListener("blocking-add-center", onAddCenter);
+  }, [performDrop, sectionIndex]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -185,6 +205,7 @@ const StageGrid: React.FC<StageGridProps> = ({
 
     setDraggingId(elementId);
     setSelectedId(elementId);
+    onActivate?.(sectionIndex);
     movedRef.current = false;
     longPressFiredRef.current = false;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -326,6 +347,7 @@ const StageGrid: React.FC<StageGridProps> = ({
   };
 
   const handleStageClick = (e: React.MouseEvent) => {
+    onActivate?.(sectionIndex);
     if (e.target === e.currentTarget) {
       setSelectedId(null);
     }
@@ -479,14 +501,14 @@ const StageGrid: React.FC<StageGridProps> = ({
             }}
           >
             {el.type === "character" ? (
-              <div className="flex flex-col items-center pointer-events-none" title={el.label}>
-                <svg width={el.size?.width || 30} height={el.size?.height || 30} viewBox="0 0 24 24" fill={el.color || "#333"}>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none" title={el.label}>
+                <svg width="100%" height="100%" viewBox="0 0 24 24" fill={el.color || "#333"} preserveAspectRatio="xMidYMid meet">
                   <circle cx="12" cy="6" r="4" />
                   <path d="M12 12c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z" />
                 </svg>
                 {el.label && (
                   <span
-                    className="text-[10px] font-bold leading-tight mt-0.5 whitespace-nowrap max-w-[64px] truncate text-center px-1 rounded bg-white/85"
+                    className="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 text-[10px] font-bold leading-tight whitespace-nowrap max-w-[80px] truncate text-center px-1 rounded bg-white/85"
                     style={{ color: readableTextColor(el.color) }}
                   >
                     {el.label}
@@ -495,7 +517,7 @@ const StageGrid: React.FC<StageGridProps> = ({
               </div>
             ) : (
               <div
-                className="w-full h-full pointer-events-none"
+                className="absolute inset-0 flex items-center justify-center pointer-events-none [&>svg]:w-full [&>svg]:h-full [&>svg]:block"
                 dangerouslySetInnerHTML={{ __html: el.svg || "" }}
               />
             )}

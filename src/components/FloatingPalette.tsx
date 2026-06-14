@@ -1,10 +1,13 @@
 import React, { useState } from "react";
-import { Plus, X, Users, Route, PenLine } from "lucide-react";
+import { Plus, X, Users, Route, PenLine, MousePointerClick } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DraggableElement from "@/components/DraggableElement";
 import PersonIcon from "@/components/PersonIcon";
 import { readableTextColor } from "@/lib/utils";
 import type { RecommendedPath } from "@/components/RecommendedPaths";
+import type { BlockingElement } from "@/types/blocking";
+
+type AddPayload = Pick<BlockingElement, "type" | "svg" | "color" | "label">;
 
 interface FloatingPaletteProps {
   characters: string[];
@@ -13,13 +16,17 @@ interface FloatingPaletteProps {
   customPatterns?: { id: string; svg: string }[];
   onDeletePattern?: (id: string) => void;
   onOpenDrawing?: () => void;
+  /** Insert an element at the center of the active stage. */
+  onAddElement: (payload: AddPayload) => void;
+  /** In choreography, shapes are the primary tool, so open that tab first. */
+  shapesFirst?: boolean;
 }
 
 type TabKey = "character" | "path";
 
 /**
- * A fixed, collapsible toolbar so elements can be dragged onto whichever stage is
- * currently visible — no scrolling back up to the sidebar required.
+ * A fixed, collapsible toolbar so elements can be dragged (or clicked) onto the
+ * active stage — no scrolling back up to a sidebar required.
  */
 const FloatingPalette: React.FC<FloatingPaletteProps> = ({
   characters,
@@ -28,10 +35,12 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
   customPatterns,
   onDeletePattern,
   onOpenDrawing,
+  onAddElement,
+  shapesFirst = false,
 }) => {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const hasPaths = !!paths?.length || !!customPatterns || !!onOpenDrawing;
-  const [tab, setTab] = useState<TabKey>("character");
+  const [tab, setTab] = useState<TabKey>(shapesFirst && hasPaths ? "path" : "character");
 
   if (!open) {
     return (
@@ -46,29 +55,44 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
     );
   }
 
+  const characterTab = (
+    <button
+      onClick={() => setTab("character")}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+        tab === "character" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+      }`}
+    >
+      <Users className="w-4 h-4" /> 캐릭터
+    </button>
+  );
+
+  const pathTab = hasPaths ? (
+    <button
+      onClick={() => setTab("path")}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+        tab === "path" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+      }`}
+    >
+      <Route className="w-4 h-4" /> 도형·경로
+    </button>
+  ) : null;
+
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(92vw,640px)]">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(94vw,680px)]">
       <div className="bg-card border border-border rounded-2xl shadow-elevated overflow-hidden">
         {/* Header row: tabs + close */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setTab("character")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                tab === "character" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              <Users className="w-4 h-4" /> 캐릭터
-            </button>
-            {hasPaths && (
-              <button
-                onClick={() => setTab("path")}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  tab === "path" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <Route className="w-4 h-4" /> 경로·패턴
-              </button>
+            {shapesFirst ? (
+              <>
+                {pathTab}
+                {characterTab}
+              </>
+            ) : (
+              <>
+                {characterTab}
+                {pathTab}
+              </>
             )}
           </div>
           <Button variant="ghost" size="sm" onClick={() => setOpen(false)} aria-label="팔레트 닫기">
@@ -76,43 +100,53 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
           </Button>
         </div>
 
-        {/* Body: horizontally scrollable so the panel stays compact */}
-        <div className="p-3 max-h-[40vh] overflow-y-auto">
+        {/* Hint */}
+        <div className="px-3 pt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <MousePointerClick className="w-3.5 h-3.5 shrink-0" />
+          끌어다 놓거나 <strong className="text-foreground mx-0.5">클릭</strong>하면 무대 중앙에 추가돼요.
+        </div>
+
+        {/* Body */}
+        <div className="p-3 pt-2 max-h-[42vh] overflow-y-auto">
           {tab === "character" ? (
             characters.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2 text-center">
                 위에서 캐릭터 이름을 입력하면 여기에 표시됩니다.
               </p>
             ) : (
-              <>
-                <p className="text-[11px] text-muted-foreground mb-2">아이콘을 무대로 끌어다 놓으세요</p>
-                <div className="flex flex-wrap gap-2">
-                  {characters.map((name, i) => (
-                    <DraggableElement
-                      key={`fp-char-${i}`}
-                      id={`char-${i}`}
-                      type="character"
-                      color={colors[i % colors.length]}
-                      label={name}
-                    >
-                      <PersonIcon color={colors[i % colors.length]} size={20} />
-                      <span className="text-xs font-medium" style={{ color: readableTextColor(colors[i % colors.length]) }}>
-                        {name}
-                      </span>
-                    </DraggableElement>
-                  ))}
-                </div>
-              </>
+              <div className="flex flex-wrap gap-2">
+                {characters.map((name, i) => (
+                  <DraggableElement
+                    key={`fp-char-${i}`}
+                    id={`char-${i}`}
+                    type="character"
+                    color={colors[i % colors.length]}
+                    label={name}
+                    onClickAdd={() => onAddElement({ type: "character", color: colors[i % colors.length], label: name })}
+                  >
+                    <PersonIcon color={colors[i % colors.length]} size={20} />
+                    <span className="text-xs font-medium" style={{ color: readableTextColor(colors[i % colors.length]) }}>
+                      {name}
+                    </span>
+                  </DraggableElement>
+                ))}
+              </div>
             )
           ) : (
             <div className="space-y-3">
               {!!paths?.length && (
                 <div>
-                  <p className="text-[11px] text-muted-foreground mb-2">권장 경로 — 끌어다 놓으세요</p>
+                  <p className="text-[11px] text-muted-foreground mb-2">권장 도형·경로</p>
                   <div className="flex flex-wrap gap-2">
                     {paths.map((path) => (
-                      <DraggableElement key={`fp-${path.id}`} id={path.id} type="path" svg={path.svg}>
-                        <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
+                      <DraggableElement
+                        key={`fp-${path.id}`}
+                        id={path.id}
+                        type="path"
+                        svg={path.svg}
+                        onClickAdd={() => onAddElement({ type: "path", svg: path.svg })}
+                      >
+                        <div className="w-11 h-11 border border-border rounded-lg bg-card p-0.5">
                           <div dangerouslySetInnerHTML={{ __html: path.svg }} className="w-full h-full" />
                         </div>
                         <span className="text-[10px] text-muted-foreground">{path.name}</span>
@@ -143,8 +177,13 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
                     <div className="flex flex-wrap gap-2">
                       {customPatterns.map((p) => (
                         <div key={`fp-${p.id}`} className="relative group">
-                          <DraggableElement id={p.id} type="custom" svg={p.svg}>
-                            <div className="w-10 h-10 border border-border rounded-lg bg-card p-0.5">
+                          <DraggableElement
+                            id={p.id}
+                            type="custom"
+                            svg={p.svg}
+                            onClickAdd={() => onAddElement({ type: "custom", svg: p.svg })}
+                          >
+                            <div className="w-11 h-11 border border-border rounded-lg bg-card p-0.5">
                               <div dangerouslySetInnerHTML={{ __html: p.svg }} className="w-full h-full" />
                             </div>
                           </DraggableElement>

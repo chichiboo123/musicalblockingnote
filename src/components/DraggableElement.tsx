@@ -7,16 +7,19 @@ interface DraggableElementProps {
   color?: string;
   label?: string;
   children: React.ReactNode;
+  /** Fired on a plain click/tap (no drag) — used for click-to-add at stage center. */
+  onClickAdd?: () => void;
 }
 
 const TOUCH_THRESHOLD = 6;
 
-const DraggableElement = ({ id, type, svg, color, label, children }: DraggableElementProps) => {
+const DraggableElement = ({ id, type, svg, color, label, children, onClickAdd }: DraggableElementProps) => {
   const data = { id, type, svg, color, label };
   const elRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
   const draggingRef = useRef(false);
+  const lastTapAddRef = useRef(0);
   const [touchDragging, setTouchDragging] = useState(false);
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -119,6 +122,10 @@ const DraggableElement = ({ id, type, svg, color, label, children }: DraggableEl
     }
     if (draggingRef.current) {
       dispatchSyntheticDrop(e.clientX, e.clientY);
+    } else {
+      // A tap without dragging = click-to-add
+      lastTapAddRef.current = Date.now();
+      onClickAdd?.();
     }
     cleanupGhost();
     startRef.current = null;
@@ -142,6 +149,12 @@ const DraggableElement = ({ id, type, svg, color, label, children }: DraggableEl
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onClick={() => {
+        // Mouse click (native click does not fire after an HTML5 drag). Skip the
+        // synthesized click that follows a touch tap (already handled in pointerup).
+        if (Date.now() - lastTapAddRef.current < 600) return;
+        onClickAdd?.();
+      }}
       className={`draggable-element inline-flex items-center gap-1 p-1 rounded cursor-grab touch-none ${
         touchDragging ? "opacity-40" : ""
       }`}

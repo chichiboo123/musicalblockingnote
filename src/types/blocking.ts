@@ -21,6 +21,14 @@ export interface SceneSection {
   blockingElements: BlockingElement[];
 }
 
+/** A group of scenes belonging to one act (예: 1장). Collapsible in the UI. */
+export interface SceneGroup {
+  id: number;
+  title: string;
+  collapsed?: boolean;
+  scenes: SceneSection[];
+}
+
 export interface BlockingState {
   title: string;
   characters: string;
