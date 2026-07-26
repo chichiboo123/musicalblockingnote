@@ -62,6 +62,13 @@ export default {
           ring: "hsl(var(--sidebar-ring))",
         },
       },
+      // These were referenced as `shadow-elevated`/`shadow-soft` in markup long
+      // before they existed in the theme, so the classes silently did nothing.
+      boxShadow: {
+        soft: "var(--shadow-soft)",
+        card: "var(--shadow-card)",
+        elevated: "var(--shadow-elevated)",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

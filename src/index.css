@@ -39,7 +39,8 @@
     --stage-bg: 230 18% 96%;
     --stage-border: 250 20% 78%;
     --stage-grid-line: 230 18% 88%;
-    --stage-label: 230 12% 55%;
+    --stage-label: 230 12% 42%;
+    --stage-zone-label: 230 14% 40%;
 
     --gradient-primary: linear-gradient(135deg, hsl(250 65% 55%), hsl(280 60% 60%));
     --gradient-secondary: linear-gradient(135deg, hsl(340 70% 55%), hsl(20 80% 60%));
@@ -80,7 +81,8 @@
     --stage-bg: 230 20% 12%;
     --stage-border: 250 15% 25%;
     --stage-grid-line: 230 15% 20%;
-    --stage-label: 230 10% 50%;
+    --stage-label: 230 10% 62%;
+    --stage-zone-label: 230 10% 62%;
     --shadow-soft: 0 4px 24px -4px hsl(0 0% 0% / 0.3);
     --shadow-card: 0 1px 3px 0 hsl(0 0% 0% / 0.2);
     --shadow-elevated: 0 8px 32px -8px hsl(0 0% 0% / 0.4);
@@ -120,6 +122,30 @@
 
   .stage-label {
     @apply text-[hsl(var(--stage-label))] text-xs font-medium select-none;
+  }
+
+  /* Zone codes inside the stage. They were `opacity-40` on a light grey box,
+     which fell far below the WCAG contrast floor and was unreadable in print. */
+  .stage-zone-label {
+    @apply text-[10px] font-semibold tracking-wide select-none
+           text-[hsl(var(--stage-zone-label))];
+  }
+
+  .skip-link {
+    @apply sr-only;
+  }
+
+  .skip-link:focus {
+    @apply not-sr-only fixed left-4 top-4 z-[100] rounded-lg bg-primary px-4 py-2
+           text-sm font-semibold text-primary-foreground shadow-elevated;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 
   .draggable-element {
@@ -184,5 +210,42 @@
   /* KRDS: clear, visible focus indicator for keyboard users */
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer base {
+  /* KRDS: respect the OS "reduce motion" preference across the whole app. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@media print {
+  /* Editing chrome never belongs on paper. */
+  header,
+  nav,
+  [data-export-hidden] {
+    display: none !important;
+  }
+
+  [data-export-only] {
+    display: block !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .section-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none;
   }
 }

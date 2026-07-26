@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 interface BlockingContextMenuProps {
   show: boolean;
@@ -7,6 +7,7 @@ interface BlockingContextMenuProps {
   onCopy: () => void;
   onPaste: () => void;
   onDelete: () => void;
+  onDuplicate?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onClose: () => void;
@@ -18,20 +19,8 @@ interface BlockingContextMenuProps {
 }
 
 const BlockingContextMenu: React.FC<BlockingContextMenuProps> = ({
-  show,
-  x,
-  y,
-  onCopy,
-  onPaste,
-  onDelete,
-  onUndo,
-  onRedo,
-  onClose,
-  canCopy = true,
-  canDelete = true,
-  canPaste,
-  canUndo,
-  canRedo,
+  show, x, y, onCopy, onPaste, onDelete, onDuplicate, onUndo, onRedo, onClose,
+  canCopy = true, canDelete = true, canPaste, canUndo, canRedo,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
@@ -42,18 +31,33 @@ const BlockingContextMenu: React.FC<BlockingContextMenuProps> = ({
     if (!node) return;
     const rect = node.getBoundingClientRect();
     const margin = 8;
-    const maxX = window.innerWidth - rect.width - margin;
-    const maxY = window.innerHeight - rect.height - margin;
     setPos({
-      x: Math.max(margin, Math.min(x, maxX)),
-      y: Math.max(margin, Math.min(y, maxY)),
+      x: Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin)),
+      y: Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin)),
     });
   }, [show, x, y]);
 
+  // Escape closes the menu — it previously stayed open until you clicked away.
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [show, onClose]);
+
   if (!show) return null;
 
-  const item = (label: string, shortcut: string, onClick: () => void, opts?: { disabled?: boolean; destructive?: boolean }) => (
+  const item = (
+    label: string,
+    shortcut: string,
+    onClick: () => void,
+    opts?: { disabled?: boolean; destructive?: boolean }
+  ) => (
     <button
+      type="button"
+      role="menuitem"
       onClick={() => {
         if (opts?.disabled) return;
         onClick();
@@ -71,13 +75,21 @@ const BlockingContextMenu: React.FC<BlockingContextMenuProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
+      <div
+        className="fixed inset-0 z-40"
+        onClick={onClose}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      />
       <div
         ref={ref}
         role="menu"
-        className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[180px]"
+        className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1 min-w-[190px]"
         style={{ left: pos.x, top: pos.y }}
       >
+        {onDuplicate && item("복제", "Ctrl+D", onDuplicate, { disabled: !canCopy })}
         {item("복사", "", onCopy, { disabled: !canCopy })}
         {item("붙여넣기", "", onPaste, { disabled: !canPaste })}
         <div className="border-t border-border my-1" />

@@ -1,88 +1,126 @@
-import React, { useState } from "react";
-import { Plus, X, Users, Route, PenLine, MousePointerClick } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Plus, X, Users, Route, PenLine, MousePointerClick, Type, Spline, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DraggableElement from "@/components/DraggableElement";
 import PersonIcon from "@/components/PersonIcon";
 import { readableTextColor } from "@/lib/utils";
 import type { RecommendedPath } from "@/components/RecommendedPaths";
-import type { BlockingElement } from "@/types/blocking";
-
-type AddPayload = Pick<BlockingElement, "type" | "svg" | "color" | "label">;
+import type { AddElementPayload, Character } from "@/types/blocking";
 
 interface FloatingPaletteProps {
-  characters: string[];
-  colors: string[];
+  cast: Character[];
   paths?: RecommendedPath[];
   customPatterns?: { id: string; svg: string }[];
   onDeletePattern?: (id: string) => void;
   onOpenDrawing?: () => void;
   /** Insert an element at the center of the active stage. */
-  onAddElement: (payload: AddPayload) => void;
+  onAddElement: (payload: AddElementPayload) => void;
+  /** Start capturing a movement path for the given cast member. */
+  onStartMovePath?: (character: Character | null) => void;
+  /** Human-readable name of the stage that additions land on ("#2", "1장 · 장면 3"). */
+  targetLabel?: string;
   /** In choreography, shapes are the primary tool, so open that tab first. */
   shapesFirst?: boolean;
 }
 
-type TabKey = "character" | "path";
+type TabKey = "character" | "path" | "note";
+
+const OPEN_KEY = "blocking:palette-open";
 
 /**
- * A fixed, collapsible toolbar so elements can be dragged (or clicked) onto the
- * active stage — no scrolling back up to a sidebar required.
+ * A docked toolbar so elements can be dragged (or clicked) onto the active
+ * stage. It publishes its own height as `--palette-h` so the page can reserve
+ * space instead of hiding the stage the user is editing behind it.
  */
 const FloatingPalette: React.FC<FloatingPaletteProps> = ({
-  characters,
-  colors,
+  cast,
   paths,
   customPatterns,
   onDeletePattern,
   onOpenDrawing,
   onAddElement,
+  onStartMovePath,
+  targetLabel,
   shapesFirst = false,
 }) => {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => {
+    try {
+      const stored = localStorage.getItem(OPEN_KEY);
+      if (stored != null) return stored !== "false";
+    } catch {
+      // ignore
+    }
+    // On a phone an open palette would swallow the stage, so start collapsed.
+    return typeof window === "undefined" || window.innerWidth >= 640;
+  });
   const hasPaths = !!paths?.length || !!customPatterns || !!onOpenDrawing;
   const [tab, setTab] = useState<TabKey>(shapesFirst && hasPaths ? "path" : "character");
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_KEY, String(open));
+    } catch {
+      // ignore
+    }
+  }, [open]);
+
+  // Publish the palette height so <main> can pad itself and never be covered.
+  useEffect(() => {
+    const node = rootRef.current;
+    const setVar = (h: number) => document.documentElement.style.setProperty("--palette-h", `${Math.round(h)}px`);
+    if (!node) {
+      setVar(76);
+      return;
+    }
+    const measure = () => setVar(node.getBoundingClientRect().height + 24);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return () => {
+      ro.disconnect();
+      setVar(0);
+    };
+  }, [open, tab, cast.length, customPatterns?.length]);
 
   if (!open) {
     return (
-      <Button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 rounded-full shadow-lg h-12 px-5 gap-2"
-        aria-label="요소 팔레트 열기"
-      >
-        <Plus className="w-5 h-5" />
-        요소 추가
-      </Button>
+      <div ref={rootRef} className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40" data-export-hidden>
+        <Button onClick={() => setOpen(true)} className="rounded-full shadow-elevated h-12 px-5 gap-2" aria-label="요소 팔레트 열기">
+          <Plus className="w-5 h-5" />
+          요소 추가
+        </Button>
+      </div>
     );
   }
 
-  const characterTab = (
+  const tabButton = (key: TabKey, icon: React.ReactNode, label: string) => (
     <button
-      onClick={() => setTab("character")}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-        tab === "character" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+      type="button"
+      onClick={() => setTab(key)}
+      aria-pressed={tab === key}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+        tab === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
       }`}
     >
-      <Users className="w-4 h-4" /> 캐릭터
+      {icon} {label}
     </button>
   );
 
-  const pathTab = hasPaths ? (
-    <button
-      onClick={() => setTab("path")}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-        tab === "path" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-      }`}
-    >
-      <Route className="w-4 h-4" /> 도형·경로
-    </button>
-  ) : null;
+  const characterTab = tabButton("character", <Users className="w-4 h-4" />, "인물");
+  const pathTab = hasPaths ? tabButton("path", <Route className="w-4 h-4" />, "도형·경로") : null;
+  const noteTab = tabButton("note", <Type className="w-4 h-4" />, "메모");
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(94vw,680px)]">
+    <div
+      ref={rootRef}
+      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[min(96vw,720px)]"
+      data-export-hidden
+    >
       <div className="bg-card border border-border rounded-2xl shadow-elevated overflow-hidden">
-        {/* Header row: tabs + close */}
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
-          <div className="flex items-center gap-1">
+        {/* Header row: tabs + target + close */}
+        <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-b border-border">
+          <div className="flex items-center gap-1 overflow-x-auto">
             {shapesFirst ? (
               <>
                 {pathTab}
@@ -94,45 +132,77 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
                 {pathTab}
               </>
             )}
+            {noteTab}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setOpen(false)} aria-label="팔레트 닫기">
-            <X className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            {targetLabel && (
+              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-[11px] font-semibold px-2 py-1">
+                <MousePointerClick className="w-3 h-3" />
+                {targetLabel}에 추가
+              </span>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)} aria-label="팔레트 접기">
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
-        {/* Hint */}
-        <div className="px-3 pt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <MousePointerClick className="w-3.5 h-3.5 shrink-0" />
-          끌어다 놓거나 <strong className="text-foreground mx-0.5">클릭</strong>하면 무대 중앙에 추가돼요.
-        </div>
+        {targetLabel && (
+          <p className="sm:hidden px-3 pt-1.5 text-[11px] text-primary font-semibold">{targetLabel}에 추가됩니다</p>
+        )}
 
         {/* Body */}
-        <div className="p-3 pt-2 max-h-[42vh] overflow-y-auto">
-          {tab === "character" ? (
-            characters.length === 0 ? (
+        <div className="p-3 pt-2 max-h-[34vh] overflow-y-auto">
+          {tab === "character" && (
+            cast.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2 text-center">
-                위에서 캐릭터 이름을 입력하면 여기에 표시됩니다.
+                위 <strong className="text-foreground">등장인물</strong>에 이름을 추가하면 여기에 표시됩니다.
               </p>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {characters.map((name, i) => (
-                  <DraggableElement
-                    key={`fp-char-${i}`}
-                    id={`char-${i}`}
-                    type="character"
-                    color={colors[i % colors.length]}
-                    label={name}
-                    onClickAdd={() => onAddElement({ type: "character", color: colors[i % colors.length], label: name })}
-                  >
-                    <PersonIcon color={colors[i % colors.length]} size={20} />
-                    <span className="text-xs font-medium" style={{ color: readableTextColor(colors[i % colors.length]) }}>
-                      {name}
-                    </span>
-                  </DraggableElement>
-                ))}
-              </div>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {cast.map((c) => (
+                    <DraggableElement
+                      key={c.id}
+                      id={c.id}
+                      type="character"
+                      color={c.color}
+                      label={c.name}
+                      onClickAdd={() => onAddElement({ type: "character", color: c.color, label: c.name })}
+                    >
+                      <PersonIcon color={c.color} size={20} />
+                      <span className="text-xs font-medium" style={{ color: readableTextColor(c.color) }}>
+                        {c.name}
+                      </span>
+                    </DraggableElement>
+                  ))}
+                </div>
+                {onStartMovePath && (
+                  <div className="mt-3 pt-2.5 border-t border-border">
+                    <p className="text-[11px] text-muted-foreground mb-1.5">
+                      이동 경로 — 인물을 고르고 무대를 클릭해 지나갈 지점을 이어 주세요.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {cast.map((c) => (
+                        <Button
+                          key={`move-${c.id}`}
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1 text-xs"
+                          onClick={() => onStartMovePath(c)}
+                        >
+                          <Spline className="w-3.5 h-3.5" style={{ color: c.color }} />
+                          {c.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )
-          ) : (
+          )}
+
+          {tab === "path" && (
             <div className="space-y-3">
               {!!paths?.length && (
                 <div>
@@ -144,6 +214,7 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
                         id={path.id}
                         type="path"
                         svg={path.svg}
+                        label={path.name}
                         onClickAdd={() => onAddElement({ type: "path", svg: path.svg })}
                       >
                         <div className="w-11 h-11 border border-border rounded-lg bg-card p-0.5">
@@ -160,15 +231,7 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-[11px] text-muted-foreground">내 패턴</p>
                     {onOpenDrawing && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7"
-                        onClick={() => {
-                          setOpen(false);
-                          onOpenDrawing();
-                        }}
-                      >
+                      <Button variant="outline" size="sm" className="h-7" onClick={onOpenDrawing}>
                         <PenLine className="w-3.5 h-3.5 mr-1" /> 그리기
                       </Button>
                     )}
@@ -189,9 +252,10 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
                           </DraggableElement>
                           {onDeletePattern && (
                             <button
+                              type="button"
                               onClick={() => onDeletePattern(p.id)}
                               aria-label="패턴 삭제"
-                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow"
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity flex items-center justify-center shadow"
                             >
                               <X className="w-2.5 h-2.5" />
                             </button>
@@ -206,7 +270,37 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
               )}
             </div>
           )}
+
+          {tab === "note" && (
+            <div>
+              <p className="text-[11px] text-muted-foreground mb-2">
+                소품·조명·대형 같은 메모를 무대에 붙일 수 있어요. 추가한 뒤 더블클릭하면 내용을 고칩니다.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {["소품", "조명", "암전", "대형 변경", "빈 메모"].map((preset) => (
+                  <DraggableElement
+                    key={preset}
+                    id={`note-${preset}`}
+                    type="text"
+                    label={preset}
+                    text={preset === "빈 메모" ? "" : preset}
+                    onClickAdd={() => onAddElement({ type: "text", text: preset === "빈 메모" ? "메모" : preset })}
+                  >
+                    <span className="inline-flex items-center gap-1 rounded-lg border border-dashed border-border bg-muted/40 px-2.5 py-1.5 text-xs font-medium">
+                      <Type className="w-3.5 h-3.5 text-muted-foreground" />
+                      {preset}
+                    </span>
+                  </DraggableElement>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+
+        <p className="px-3 pb-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <MousePointerClick className="w-3.5 h-3.5 shrink-0" />
+          끌어다 놓거나 <strong className="text-foreground mx-0.5">클릭</strong>하면 무대 중앙에 추가돼요.
+        </p>
       </div>
     </div>
   );
