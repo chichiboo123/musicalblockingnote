@@ -1,11 +1,14 @@
 import React, { useRef, useState } from "react";
 
+import type { ElementType } from "@/types/blocking";
+
 interface DraggableElementProps {
   id: string;
-  type: "character" | "path" | "custom";
+  type: ElementType;
   svg?: string;
   color?: string;
   label?: string;
+  text?: string;
   children: React.ReactNode;
   /** Fired on a plain click/tap (no drag) — used for click-to-add at stage center. */
   onClickAdd?: () => void;
@@ -13,8 +16,8 @@ interface DraggableElementProps {
 
 const TOUCH_THRESHOLD = 6;
 
-const DraggableElement = ({ id, type, svg, color, label, children, onClickAdd }: DraggableElementProps) => {
-  const data = { id, type, svg, color, label };
+const DraggableElement = ({ id, type, svg, color, label, text, children, onClickAdd }: DraggableElementProps) => {
+  const data = { id, type, svg, color, label, text };
   const elRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);

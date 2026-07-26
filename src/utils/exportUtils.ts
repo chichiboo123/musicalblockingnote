@@ -1,76 +1,97 @@
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 import { sanitizeFilename } from "@/lib/utils";
 
-export async function exportAsJPG(
-  contentRef: React.RefObject<HTMLDivElement>,
-  filename: string
-) {
-  if (!contentRef.current) return;
+// html2canvas + jsPDF are ~700KB of the bundle and are only needed the moment
+// someone exports, so they are loaded on demand instead of on first paint.
+const loadHtml2Canvas = () => import("html2canvas").then((m) => m.default);
+const loadJsPDF = () => import("jspdf").then((m) => m.default);
 
-  const canvas = await html2canvas(contentRef.current, {
+/** Strip editing chrome and reveal export-only chrome inside the cloned DOM. */
+function prepareClone(clonedDoc: Document) {
+  clonedDoc.querySelectorAll("[data-draggable]").forEach((el) => {
+    const node = el as HTMLElement;
+    node.style.border = "none";
+    node.style.boxShadow = "none";
+    node.style.outline = "none";
+  });
+  clonedDoc.querySelectorAll("[data-export-hidden]").forEach((el) => {
+    (el as HTMLElement).style.display = "none";
+  });
+  clonedDoc.querySelectorAll("[data-resize-handle]").forEach((el) => {
+    (el as HTMLElement).style.display = "none";
+  });
+  // Title/cast headers that only make sense on paper
+  clonedDoc.querySelectorAll("[data-export-only]").forEach((el) => {
+    (el as HTMLElement).style.display = "block";
+  });
+  // Textareas clip their own overflow on screen; grow them so no lyric is cut off
+  clonedDoc.querySelectorAll("textarea").forEach((el) => {
+    const ta = el as HTMLTextAreaElement;
+    ta.style.height = "auto";
+    ta.style.height = `${ta.scrollHeight + 4}px`;
+    ta.style.overflow = "visible";
+    ta.style.resize = "none";
+  });
+}
+
+async function capture(node: HTMLElement) {
+  const html2canvas = await loadHtml2Canvas();
+  return html2canvas(node, {
     scale: 2,
     backgroundColor: "#ffffff",
     logging: false,
-    onclone: (clonedDoc) => {
-      const els = clonedDoc.querySelectorAll("[data-draggable]");
-      els.forEach((el) => {
-        (el as HTMLElement).style.border = "none";
-        (el as HTMLElement).style.boxShadow = "none";
-        (el as HTMLElement).style.outline = "none";
-      });
-      // Hide UI controls and resize handles that don't belong in exports
-      const controls = clonedDoc.querySelectorAll("[data-export-hidden]");
-      controls.forEach((h) => ((h as HTMLElement).style.display = "none"));
-      const handles = clonedDoc.querySelectorAll("[data-resize-handle]");
-      handles.forEach((h) => ((h as HTMLElement).style.display = "none"));
-    },
+    useCORS: true,
+    onclone: prepareClone,
   });
+}
 
+export async function exportAsJPG(contentRef: React.RefObject<HTMLDivElement>, filename: string) {
+  if (!contentRef.current) return;
+  const canvas = await capture(contentRef.current);
   const link = document.createElement("a");
   link.download = `${sanitizeFilename(filename) || "blocking-note"}.jpg`;
   link.href = canvas.toDataURL("image/jpeg", 0.95);
   link.click();
 }
 
-export async function exportAsPDF(
-  sectionRefs: React.RefObject<HTMLDivElement>[],
-  filename: string
-) {
-  const pdf = new jsPDF("l", "mm", "a4");
+export async function exportAsPDF(sectionRefs: React.RefObject<HTMLDivElement>[], filename: string) {
+  const JsPDF = await loadJsPDF();
+  const pdf = new JsPDF("l", "mm", "a4");
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 10;
+  const footerSpace = 8;
 
-  for (let i = 0; i < sectionRefs.length; i++) {
-    const ref = sectionRefs[i];
-    if (!ref.current) continue;
+  const usable = {
+    width: pageWidth - margin * 2,
+    height: pageHeight - margin * 2 - footerSpace,
+  };
 
-    if (i > 0) pdf.addPage();
+  let pageCount = 0;
+  for (const ref of sectionRefs) {
+    if (!ref?.current) continue;
+    if (pageCount > 0) pdf.addPage();
+    pageCount++;
 
-    const canvas = await html2canvas(ref.current, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      logging: false,
-      onclone: (clonedDoc) => {
-        const els = clonedDoc.querySelectorAll("[data-draggable]");
-        els.forEach((el) => {
-          (el as HTMLElement).style.border = "none";
-          (el as HTMLElement).style.boxShadow = "none";
-          (el as HTMLElement).style.outline = "none";
-        });
-        const controls = clonedDoc.querySelectorAll("[data-export-hidden]");
-        controls.forEach((h) => ((h as HTMLElement).style.display = "none"));
-        const handles = clonedDoc.querySelectorAll("[data-resize-handle]");
-        handles.forEach((h) => ((h as HTMLElement).style.display = "none"));
-      },
-    });
-
+    const canvas = await capture(ref.current);
     const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    const imgWidth = pageWidth - 20;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    const finalHeight = Math.min(imgHeight, pageHeight - 20);
 
-    pdf.addImage(imgData, "JPEG", 10, 10, imgWidth, finalHeight);
+    // Fit inside the page on BOTH axes — the previous version clamped only the
+    // height, which squashed tall sections out of proportion.
+    const scale = Math.min(usable.width / canvas.width, usable.height / canvas.height);
+    const w = canvas.width * scale;
+    const h = canvas.height * scale;
+    pdf.addImage(imgData, "JPEG", margin + (usable.width - w) / 2, margin, w, h);
+  }
+
+  if (pageCount === 0) return;
+
+  // Page numbers (ASCII only — the built-in PDF fonts carry no Hangul glyphs).
+  const total = pdf.getNumberOfPages();
+  pdf.setFontSize(9);
+  pdf.setTextColor(140);
+  for (let i = 1; i <= total; i++) {
+    pdf.setPage(i);
+    pdf.text(`${i} / ${total}`, pageWidth - margin, pageHeight - 5, { align: "right" });
   }
 
   pdf.save(`${sanitizeFilename(filename) || "blocking-note"}.pdf`);
