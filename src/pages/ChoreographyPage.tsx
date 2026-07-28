@@ -444,158 +444,159 @@ const ChoreographyPage: React.FC = () => {
 
       <main
         id="main"
-        className="container mx-auto px-3 sm:px-4 py-5"
         style={{
-          paddingBottom: "calc(var(--palette-h, 96px) + 24px)",
-          paddingLeft: "calc(var(--palette-w, 0px) + 0.75rem)",
+          paddingLeft: "var(--palette-w, 0px)",
+          paddingBottom: "calc(var(--palette-h, 0px) + 24px)",
         }}
       >
-        <div className="max-w-3xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-4 mb-5">
-            <div>
-              <label htmlFor="project-title" className="text-sm font-medium text-foreground mb-1.5 block">
-                프로젝트 제목
-              </label>
-              <Input
-                id="project-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onFocus={snapshot}
-                placeholder="예: 뮤지컬 패딩턴 1막"
-              />
+        <div className="container mx-auto px-3 sm:px-4 py-5">
+          <div className="max-w-3xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-4 mb-5">
+              <div>
+                <label htmlFor="project-title" className="text-sm font-medium text-foreground mb-1.5 block">
+                  프로젝트 제목
+                </label>
+                <Input
+                  id="project-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onFocus={snapshot}
+                  placeholder="예: 뮤지컬 패딩턴 1막"
+                />
+              </div>
+              <CastEditor cast={cast} onChange={setCast} onBeforeChange={snapshot} />
             </div>
-            <CastEditor cast={cast} onChange={setCast} onBeforeChange={snapshot} />
-          </div>
 
-          <SectionNav items={navItems} activeIndex={safeActive} onSelect={focusSection} />
+            <SectionNav items={navItems} activeIndex={safeActive} onSelect={focusSection} />
 
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis]}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext items={verseSections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-5 mt-4">
-                {verseSections.map((section, index) => (
-                  <SortableCard
-                    key={section.id}
-                    id={section.id}
-                    className="section-card"
-                    exportRef={sectionRefs.current[index]}
-                    isActive={index === safeActive}
-                    onFocusCapture={() => setActiveSection(index)}
-                  >
-                    {(handle) => (
-                      <>
-                        <ExportHeader title={title} sectionLabel={`#${index + 1}`} cast={cast} />
-                        <div className="flex items-center justify-between mb-3 gap-2">
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span data-export-hidden>{handle}</span>
-                            <h3 className="text-sm font-bold text-foreground">#{index + 1}</h3>
-                            {index === safeActive && (
-                              <span
-                                className="ml-1 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-1.5 py-0.5"
-                                data-export-hidden
-                              >
-                                작업 중
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex gap-0.5" data-export-hidden>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleDuplicateSection(index)} aria-label="이 블록 복제">
-                                  <CopyPlus className="w-3.5 h-3.5" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>배치를 이어받아 복제</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleExportJPG(index)} aria-label="이미지로 저장">
-                                  <Image className="w-3.5 h-3.5" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>이미지(JPG)로 저장</TooltipContent>
-                            </Tooltip>
-                            {verseSections.length > 1 && (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext items={verseSections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-5 mt-4">
+                  {verseSections.map((section, index) => (
+                    <SortableCard
+                      key={section.id}
+                      id={section.id}
+                      className="section-card"
+                      exportRef={sectionRefs.current[index]}
+                      isActive={index === safeActive}
+                      onFocusCapture={() => setActiveSection(index)}
+                    >
+                      {(handle) => (
+                        <>
+                          <ExportHeader title={title} sectionLabel={`#${index + 1}`} cast={cast} />
+                          <div className="flex items-center justify-between mb-3 gap-2">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span data-export-hidden>{handle}</span>
+                              <h3 className="text-sm font-bold text-foreground">#{index + 1}</h3>
+                              {index === safeActive && (
+                                <span
+                                  className="ml-1 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-1.5 py-0.5"
+                                  data-export-hidden
+                                >
+                                  작업 중
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-0.5" data-export-hidden>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="sm" onClick={() => handleDeleteSection(index)} aria-label="블록 삭제">
-                                    <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                  <Button variant="ghost" size="sm" onClick={() => handleDuplicateSection(index)} aria-label="이 블록 복제">
+                                    <CopyPlus className="w-3.5 h-3.5" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent>이 블록 삭제</TooltipContent>
+                                <TooltipContent>배치를 이어받아 복제</TooltipContent>
                               </Tooltip>
-                            )}
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" onClick={() => handleExportJPG(index)} aria-label="이미지로 저장">
+                                    <Image className="w-3.5 h-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>이미지(JPG)로 저장</TooltipContent>
+                              </Tooltip>
+                              {verseSections.length > 1 && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteSection(index)} aria-label="블록 삭제">
+                                      <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>이 블록 삭제</TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
                           </div>
-                        </div>
 
-                        <Textarea
-                          value={section.lyrics}
-                          onChange={(e) => handleLyricsChange(index, e.target.value)}
-                          onFocus={() => {
-                            setActiveSection(index);
-                            snapshot();
-                          }}
-                          placeholder="예: 런던 거리 위, 패딩턴이 처음 도착했네"
-                          aria-label={`${index + 1}번 블록 가사`}
-                          className="mb-3 min-h-[60px] text-sm"
-                        />
+                          <Textarea
+                            value={section.lyrics}
+                            onChange={(e) => handleLyricsChange(index, e.target.value)}
+                            onFocus={() => {
+                              setActiveSection(index);
+                              snapshot();
+                            }}
+                            placeholder="예: 런던 거리 위, 패딩턴이 처음 도착했네"
+                            aria-label={`${index + 1}번 블록 가사`}
+                            className="mb-3 min-h-[60px] text-sm"
+                          />
 
-                        <StageGrid
-                          sectionIndex={index}
-                          elements={section.blockingElements}
-                          onElementDrop={el.add}
-                          onElementMove={el.move}
-                          onElementRemove={el.remove}
-                          onElementsRemove={el.removeMany}
-                          onElementResize={el.resize}
-                          onElementRotate={el.rotate}
-                          onContextMenu={setContextMenu}
-                          onMoveStart={snapshot}
-                          onActivate={setActiveSection}
-                          onSelectionChange={(element, sectionIndex) =>
-                            setSelection((prev) =>
-                              prev.element?.id === element?.id &&
-                              prev.element?.color === element?.color &&
-                              prev.sectionIndex === sectionIndex
-                                ? prev
-                                : { element, sectionIndex }
-                            )
-                          }
-                          onElementActivate={(element, sectionIndex) => {
-                            if (element.type === "text") {
-                              setNoteDraft({ id: element.id, sectionIndex, value: element.text ?? "" });
+                          <StageGrid
+                            sectionIndex={index}
+                            elements={section.blockingElements}
+                            onElementDrop={el.add}
+                            onElementMove={el.move}
+                            onElementRemove={el.remove}
+                            onElementsRemove={el.removeMany}
+                            onElementResize={el.resize}
+                            onElementRotate={el.rotate}
+                            onContextMenu={setContextMenu}
+                            onMoveStart={snapshot}
+                            onActivate={setActiveSection}
+                            onSelectionChange={(element, sectionIndex) =>
+                              setSelection((prev) =>
+                                prev.element?.id === element?.id &&
+                                prev.element?.color === element?.color &&
+                                prev.sectionIndex === sectionIndex
+                                  ? prev
+                                  : { element, sectionIndex }
+                              )
                             }
-                          }}
-                          onMigrate={el.replaceAll}
-                          drawing={drawing?.sectionIndex === index ? { color: drawing.color, label: drawing.label } : null}
-                          onDrawFinish={handleDrawFinish}
-                          onDrawCancel={() => setDrawing(null)}
-                          showCenterGuides={showGuides}
-                          orientation={orientation}
-                          isActive={index === safeActive}
-                        />
-                      </>
-                    )}
-                  </SortableCard>
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+                            onElementActivate={(element, sectionIndex) => {
+                              if (element.type === "text") {
+                                setNoteDraft({ id: element.id, sectionIndex, value: element.text ?? "" });
+                              }
+                            }}
+                            onMigrate={el.replaceAll}
+                            drawing={drawing?.sectionIndex === index ? { color: drawing.color, label: drawing.label } : null}
+                            onDrawFinish={handleDrawFinish}
+                            onDrawCancel={() => setDrawing(null)}
+                            showCenterGuides={showGuides}
+                            orientation={orientation}
+                            isActive={index === safeActive}
+                          />
+                        </>
+                      )}
+                    </SortableCard>
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
 
-          <Button variant="outline" onClick={handleAddSection} className="w-full mt-5 border-dashed border-2">
-            <Plus className="w-4 h-4 mr-1" /> 블록 추가
-          </Button>
+            <Button variant="outline" onClick={handleAddSection} className="w-full mt-5 border-dashed border-2">
+              <Plus className="w-4 h-4 mr-1" /> 블록 추가
+            </Button>
 
-          {verseSections.length === 1 && verseSections[0].blockingElements.length === 0 && (
-            <p className="mt-4 text-center text-xs text-muted-foreground">
-              <Music className="inline w-3.5 h-3.5 mr-1 align-text-bottom" />
-              절이 바뀌어도 배치가 비슷하다면 <strong className="text-foreground">복제</strong> 버튼으로 이어서 만드세요.
-            </p>
-          )}
+            {verseSections.length === 1 && verseSections[0].blockingElements.length === 0 && (
+              <p className="mt-4 text-center text-xs text-muted-foreground">
+                <Music className="inline w-3.5 h-3.5 mr-1 align-text-bottom" />
+                절이 바뀌어도 배치가 비슷하다면 <strong className="text-foreground">복제</strong> 버튼으로 이어서 만드세요.
+              </p>
+            )}
+          </div>
         </div>
       </main>
 

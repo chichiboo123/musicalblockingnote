@@ -12,11 +12,13 @@ interface DraggableElementProps {
   children: React.ReactNode;
   /** Fired on a plain click/tap (no drag) — used for click-to-add at stage center. */
   onClickAdd?: () => void;
+  /** Extra layout classes — e.g. to let a tile stretch inside a grid cell. */
+  className?: string;
 }
 
 const TOUCH_THRESHOLD = 6;
 
-const DraggableElement = ({ id, type, svg, color, label, text, children, onClickAdd }: DraggableElementProps) => {
+const DraggableElement = ({ id, type, svg, color, label, text, children, onClickAdd, className = "" }: DraggableElementProps) => {
   const data = { id, type, svg, color, label, text };
   const elRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement | null>(null);
@@ -160,7 +162,7 @@ const DraggableElement = ({ id, type, svg, color, label, text, children, onClick
       }}
       className={`draggable-element inline-flex items-center gap-1 p-1 rounded cursor-grab touch-none ${
         touchDragging ? "opacity-40" : ""
-      }`}
+      } ${className}`}
       title={label || id}
     >
       {children}
