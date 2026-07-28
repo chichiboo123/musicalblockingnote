@@ -10,9 +10,30 @@ type Updater = (sectionIndex: number, fn: (els: BlockingElement[]) => BlockingEl
  * ended up silently missing resize.
  */
 export function useElementActions(update: Updater, snapshot: () => void) {
+  /**
+   * A movement path has no box to place — its shape lives in `points`, and
+   * `position` tracks its first point. Moving one therefore has to carry every
+   * point along by the same delta, or the path would snap back to where it was
+   * drawn the moment it is dragged.
+   */
   const move = useCallback(
     (id: string, position: { x: number; y: number }, section: number) =>
-      update(section, (els) => els.map((el) => (el.id === id ? { ...el, position, u: "%" as const } : el))),
+      update(section, (els) =>
+        els.map((el) => {
+          if (el.id !== id) return el;
+          if (el.type === "move" && el.points?.length) {
+            const dx = position.x - el.position.x;
+            const dy = position.y - el.position.y;
+            return {
+              ...el,
+              position,
+              points: el.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+              u: "%" as const,
+            };
+          }
+          return { ...el, position, u: "%" as const };
+        })
+      ),
     [update]
   );
 
