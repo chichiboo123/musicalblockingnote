@@ -753,6 +753,7 @@ const ScenePage: React.FC = () => {
                                   onElementDrop={el.add}
                                   onElementMove={el.move}
                                   onElementRemove={el.remove}
+                                  onElementsRemove={el.removeMany}
                                   onElementResize={el.resize}
                                   onElementRotate={el.rotate}
                                   onContextMenu={setContextMenu}

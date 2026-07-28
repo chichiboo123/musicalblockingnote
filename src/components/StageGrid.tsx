@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { RotateCw, Check, X } from "lucide-react";
+import { RotateCw, Check, X, Trash2 } from "lucide-react";
 import { readableTextColor } from "@/lib/utils";
 import {
   DEFAULT_SIZE_PCT, MIN_SIZE_PCT, distanceToPolyline, migrateElements,
-  pointToPx, pxToPct, smoothPath, toPxRect, type Rect,
+  pointToPx, smoothPath, toPxRect, type Rect,
 } from "@/lib/geometry";
 import type { BlockingElement, ContextMenuState, StageOrientation, StagePoint } from "@/types/blocking";
 
@@ -20,6 +20,8 @@ interface StageGridProps {
   onElementDrop: (element: BlockingElement, sectionIndex: number) => void;
   onElementMove: (elementId: string, position: { x: number; y: number }, sectionIndex: number) => void;
   onElementRemove: (elementId: string, sectionIndex: number) => void;
+  /** Bulk delete for a multi-selection. Falls back to repeated onElementRemove calls if omitted. */
+  onElementsRemove?: (elementIds: string[], sectionIndex: number) => void;
   onElementResize?: (elementId: string, size: { width: number; height: number }, sectionIndex: number) => void;
   onElementRotate?: (elementId: string, rotation: number, sectionIndex: number) => void;
   onContextMenu?: (state: ContextMenuState) => void;
@@ -42,6 +44,12 @@ interface StageGridProps {
 }
 
 const SNAP_THRESHOLD = 1.4; // percent of the stage box
+
+/** Percent-space axis-aligned overlap test used for marquee (rubber-band) selection. */
+const rectsOverlap = (
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number }
+) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 /** Column labels left→right. Theatre convention is the performer's own left/right. */
 const LABELS: Record<StageOrientation, { short: string[][]; full: string[][] }> = {
@@ -77,6 +85,7 @@ const StageGrid: React.FC<StageGridProps> = ({
   onElementDrop,
   onElementMove,
   onElementRemove,
+  onElementsRemove,
   onElementResize,
   onElementRotate,
   onContextMenu,
@@ -97,15 +106,22 @@ const StageGrid: React.FC<StageGridProps> = ({
   const [rect, setRect] = useState<Rect>({ width: 0, height: 0 });
   const [isDragOver, setIsDragOver] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const [rotatingId, setRotatingId] = useState<string | null>(null);
-  const [selectedId, setSelectedIdState] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [snap, setSnap] = useState<{ x: boolean; y: boolean }>({ x: false, y: false });
   const [draft, setDraft] = useState<StagePoint[]>([]);
   const [hoverPoint, setHoverPoint] = useState<StagePoint | null>(null);
+  const [marqueeBox, setMarqueeBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const movedRef = useRef(false);
+  const marqueeStartRef = useRef<{ xPct: number; yPct: number; ctrl: boolean } | null>(null);
+  const dragGroupRef = useRef<{
+    anchorId: string;
+    startClientX: number;
+    startClientY: number;
+    positions: Map<string, { x: number; y: number }>;
+  } | null>(null);
 
   const labels = LABELS[orientation];
 
@@ -132,15 +148,17 @@ const StageGrid: React.FC<StageGridProps> = ({
     onMigrate(sectionIndex, migrateElements(elements));
   }, [elements, onMigrate, sectionIndex]);
 
+  // A single selected element is exposed to the parent (for the selection
+  // toolbar); a multi-selection surfaces no single element there.
   const selectedElement = useMemo(
-    () => elements.find((el) => el.id === selectedId) ?? null,
-    [elements, selectedId]
+    () => (selectedIds.size === 1 ? elements.find((el) => selectedIds.has(el.id)) ?? null : null),
+    [elements, selectedIds]
   );
 
-  const setSelectedId = useCallback(
-    (id: string | null) => {
-      setSelectedIdState(id);
-      if (id) {
+  const applySelection = useCallback(
+    (next: Set<string>) => {
+      setSelectedIds(next);
+      if (next.size > 0) {
         window.dispatchEvent(new CustomEvent("blocking-selection", { detail: { sectionIndex } }));
       }
     },
@@ -156,7 +174,7 @@ const StageGrid: React.FC<StageGridProps> = ({
   useEffect(() => {
     const onOtherSelection = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.sectionIndex !== sectionIndex) setSelectedIdState(null);
+      if (detail?.sectionIndex !== sectionIndex) setSelectedIds(new Set());
     };
     window.addEventListener("blocking-selection", onOtherSelection);
     return () => window.removeEventListener("blocking-selection", onOtherSelection);
@@ -213,10 +231,10 @@ const StageGrid: React.FC<StageGridProps> = ({
       };
 
       onElementDrop(newElement, sectionIndex);
-      setSelectedId(newElement.id);
+      applySelection(new Set([newElement.id]));
       onActivate?.(sectionIndex);
     },
-    [sectionIndex, onElementDrop, clampPosition, setSelectedId, onActivate, localPct]
+    [sectionIndex, onElementDrop, clampPosition, applySelection, onActivate, localPct]
   );
 
   // Touch drops dispatched from DraggableElement
@@ -324,12 +342,31 @@ const StageGrid: React.FC<StageGridProps> = ({
     e.stopPropagation();
     if (!elements.some((el) => el.id === elementId)) return;
 
+    const isCtrl = e.ctrlKey || e.metaKey;
+    let nextIds: Set<string>;
+    if (isCtrl) {
+      nextIds = new Set(selectedIds);
+      if (nextIds.has(elementId)) nextIds.delete(elementId);
+      else nextIds.add(elementId);
+      applySelection(nextIds);
+      if (!nextIds.has(elementId)) return; // ctrl-click just deselected it — nothing to drag
+    } else if (selectedIds.has(elementId) && selectedIds.size > 1) {
+      nextIds = selectedIds; // dragging a member of an existing multi-selection moves the whole group
+    } else {
+      nextIds = new Set([elementId]);
+      applySelection(nextIds);
+    }
+
     setDraggingId(elementId);
-    setSelectedId(elementId);
     onActivate?.(sectionIndex);
     movedRef.current = false;
-    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setDragOffset({ x: e.clientX - box.left, y: e.clientY - box.top });
+
+    const positions = new Map<string, { x: number; y: number }>();
+    elements.forEach((el) => {
+      if (nextIds.has(el.id)) positions.set(el.id, { ...el.position });
+    });
+    dragGroupRef.current = { anchorId: elementId, startClientX: e.clientX, startClientY: e.clientY, positions };
+
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
@@ -367,7 +404,22 @@ const StageGrid: React.FC<StageGridProps> = ({
     e.preventDefault();
     if (!elements.some((el) => el.id === elementId)) return;
     setRotatingId(elementId);
-    setSelectedId(elementId);
+    applySelection(new Set([elementId]));
+    movedRef.current = false;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  /** Starts marquee (rubber-band) selection when the pointer goes down on empty stage. */
+  const handleStagePointerDown = (e: React.PointerEvent) => {
+    if (drawing || draggingId || resizingId || rotatingId) return;
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    const at = localPct(e.clientX, e.clientY);
+    if (!at) return;
+    marqueeStartRef.current = { xPct: at.x, yPct: at.y, ctrl: e.ctrlKey || e.metaKey };
     movedRef.current = false;
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -384,6 +436,25 @@ const StageGrid: React.FC<StageGridProps> = ({
       if (drawing) {
         const at = localPct(e.clientX, e.clientY);
         if (at) setHoverPoint(at);
+        return;
+      }
+
+      if (marqueeStartRef.current) {
+        const at = localPct(e.clientX, e.clientY);
+        if (at) {
+          const start = marqueeStartRef.current;
+          const dx = at.x - start.xPct;
+          const dy = at.y - start.yPct;
+          if (!movedRef.current && Math.hypot(dx, dy) > 0.6) movedRef.current = true;
+          if (movedRef.current) {
+            setMarqueeBox({
+              x: Math.min(start.xPct, at.x),
+              y: Math.min(start.yPct, at.y),
+              w: Math.abs(dx),
+              h: Math.abs(dy),
+            });
+          }
+        }
         return;
       }
 
@@ -418,41 +489,75 @@ const StageGrid: React.FC<StageGridProps> = ({
         return;
       }
 
-      if (!draggingId) return;
-      const el = elements.find((item) => item.id === draggingId);
-      if (!el) return;
-      const size = el.size ?? DEFAULT_SIZE_PCT[el.type];
-      const raw = pxToPct(e.clientX - r.left - dragOffset.x, e.clientY - r.top - dragOffset.y, r);
-      const pos = clampPosition(raw.x, raw.y, size.width, size.height);
+      if (!draggingId || !dragGroupRef.current) return;
+      const group = dragGroupRef.current;
+      const anchorEl = elements.find((item) => item.id === group.anchorId);
+      const anchorStart = group.positions.get(group.anchorId);
+      if (!anchorEl || !anchorStart) return;
+      const anchorSize = anchorEl.size ?? DEFAULT_SIZE_PCT[anchorEl.type];
 
-      // Canva-style snapping: align the element's center to the stage center
-      const snappedX = Math.abs(pos.x + size.width / 2 - 50) <= SNAP_THRESHOLD;
-      const snappedY = Math.abs(pos.y + size.height / 2 - 50) <= SNAP_THRESHOLD;
-      if (snappedX) pos.x = 50 - size.width / 2;
-      if (snappedY) pos.y = 50 - size.height / 2;
+      let dx = ((e.clientX - group.startClientX) / r.width) * 100;
+      let dy = ((e.clientY - group.startClientY) / r.height) * 100;
+
+      // Canva-style snapping: align the anchor element's center to the stage center
+      const anchorX = anchorStart.x + dx;
+      const anchorY = anchorStart.y + dy;
+      const snappedX = Math.abs(anchorX + anchorSize.width / 2 - 50) <= SNAP_THRESHOLD;
+      const snappedY = Math.abs(anchorY + anchorSize.height / 2 - 50) <= SNAP_THRESHOLD;
+      if (snappedX) dx = 50 - anchorSize.width / 2 - anchorStart.x;
+      if (snappedY) dy = 50 - anchorSize.height / 2 - anchorStart.y;
       setSnap((prev) => (prev.x === snappedX && prev.y === snappedY ? prev : { x: snappedX, y: snappedY }));
       if (!movedRef.current) onMoveStart?.();
       movedRef.current = true;
       cancelLongPress();
-      onElementMove(draggingId, pos, sectionIndex);
+
+      group.positions.forEach((startPos, id) => {
+        const el = elements.find((item) => item.id === id);
+        if (!el) return;
+        const size = el.size ?? DEFAULT_SIZE_PCT[el.type];
+        const pos = clampPosition(startPos.x + dx, startPos.y + dy, size.width, size.height);
+        onElementMove(id, pos, sectionIndex);
+      });
     },
-    [drawing, localPct, draggingId, dragOffset, onElementMove, sectionIndex, resizingId, resizeStart,
+    [drawing, localPct, draggingId, onElementMove, sectionIndex, resizingId, resizeStart,
      onElementResize, rotatingId, onElementRotate, elements, clampPosition, cancelLongPress, onMoveStart]
   );
 
   const handlePointerUp = () => {
     cancelLongPress();
+    if (marqueeStartRef.current) {
+      const start = marqueeStartRef.current;
+      if (movedRef.current && marqueeBox) {
+        const hitIds = elements
+          .filter((el) => el.type !== "move")
+          .filter((el) => {
+            const size = el.size ?? DEFAULT_SIZE_PCT[el.type];
+            return rectsOverlap(marqueeBox, { x: el.position.x, y: el.position.y, w: size.width, h: size.height });
+          })
+          .map((el) => el.id);
+        if (hitIds.length) {
+          applySelection(start.ctrl ? new Set([...selectedIds, ...hitIds]) : new Set(hitIds));
+        } else if (!start.ctrl) {
+          applySelection(new Set());
+        }
+      } else {
+        applySelection(new Set());
+      }
+      marqueeStartRef.current = null;
+      setMarqueeBox(null);
+    }
     setDraggingId(null);
     setResizingId(null);
     setRotatingId(null);
     setSnap({ x: false, y: false });
     movedRef.current = false;
+    dragGroupRef.current = null;
   };
 
   const handleContextMenu = (e: React.MouseEvent, elementId: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setSelectedId(elementId);
+    if (!selectedIds.has(elementId)) applySelection(new Set([elementId]));
     onContextMenu?.({ show: true, x: e.clientX, y: e.clientY, targetId: elementId, sectionIndex });
   };
 
@@ -461,9 +566,7 @@ const StageGrid: React.FC<StageGridProps> = ({
     if (drawing) {
       const at = localPct(e.clientX, e.clientY);
       if (at) setDraft((prev) => [...prev, at]);
-      return;
     }
-    if (e.target === e.currentTarget) setSelectedId(null);
   };
 
   const handleStageDoubleClick = () => {
@@ -483,19 +586,53 @@ const StageGrid: React.FC<StageGridProps> = ({
   const arrowBurstTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!selectedId || drawing) return;
+    if (selectedIds.size === 0 || drawing) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
 
-      const el = elements.find((item) => item.id === selectedId);
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        onElementRemove(selectedId, sectionIndex);
-        setSelectedId(null);
-      } else if (e.key === "Escape") {
-        setSelectedId(null);
-      } else if ((e.key === "[" || e.key === "]") && onElementRotate && el && el.type !== "move") {
+        const ids = Array.from(selectedIds);
+        if (onElementsRemove) onElementsRemove(ids, sectionIndex);
+        else ids.forEach((id) => onElementRemove(id, sectionIndex));
+        applySelection(new Set());
+        return;
+      }
+      if (e.key === "Escape") {
+        applySelection(new Set());
+        return;
+      }
+
+      if (selectedIds.size > 1) {
+        // Group nudge: every selected element moves by the same step.
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+          e.preventDefault();
+          if (arrowBurstTimerRef.current == null) onMoveStart?.();
+          else window.clearTimeout(arrowBurstTimerRef.current);
+          arrowBurstTimerRef.current = window.setTimeout(() => {
+            arrowBurstTimerRef.current = null;
+          }, 800);
+          const step = e.shiftKey ? 4 : 0.6;
+          let dx = 0;
+          let dy = 0;
+          if (e.key === "ArrowLeft") dx = -step;
+          if (e.key === "ArrowRight") dx = step;
+          if (e.key === "ArrowUp") dy = -step;
+          if (e.key === "ArrowDown") dy = step;
+          selectedIds.forEach((id) => {
+            const el = elements.find((item) => item.id === id);
+            if (!el || el.type === "move") return;
+            const size = el.size ?? DEFAULT_SIZE_PCT[el.type];
+            onElementMove(id, clampPosition(el.position.x + dx, el.position.y + dy, size.width, size.height), sectionIndex);
+          });
+        }
+        return;
+      }
+
+      const selectedId = Array.from(selectedIds)[0];
+      const el = elements.find((item) => item.id === selectedId);
+      if ((e.key === "[" || e.key === "]") && onElementRotate && el && el.type !== "move") {
         e.preventDefault();
         onMoveStart?.();
         const step = e.shiftKey ? 1 : 15;
@@ -522,7 +659,7 @@ const StageGrid: React.FC<StageGridProps> = ({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, elements, onElementRemove, onElementMove, onElementRotate, sectionIndex, clampPosition, onMoveStart, drawing]);
+  }, [selectedIds, elements, onElementRemove, onElementsRemove, onElementMove, onElementRotate, sectionIndex, clampPosition, onMoveStart, drawing, applySelection]);
 
   const moveElements = elements.filter((el) => el.type === "move" && el.points && el.points.length > 1);
   const boxElements = elements.filter((el) => el.type !== "move");
@@ -540,7 +677,14 @@ const StageGrid: React.FC<StageGridProps> = ({
     }
     if (hit) {
       e.stopPropagation();
-      setSelectedId(hit);
+      if (e.ctrlKey || e.metaKey) {
+        const next = new Set(selectedIds);
+        if (next.has(hit)) next.delete(hit);
+        else next.add(hit);
+        applySelection(next);
+      } else {
+        applySelection(new Set([hit]));
+      }
       onActivate?.(sectionIndex);
     }
   };
@@ -560,6 +704,7 @@ const StageGrid: React.FC<StageGridProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onPointerDown={handleStagePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
@@ -595,6 +740,42 @@ const StageGrid: React.FC<StageGridProps> = ({
           <div className="absolute top-1/2 left-0 right-0 h-0.5 -translate-y-1/2 bg-secondary z-[15] pointer-events-none" data-export-hidden />
         )}
 
+        {marqueeBox && (
+          <div
+            className="absolute border border-primary/70 bg-primary/10 pointer-events-none z-30"
+            style={{
+              left: (marqueeBox.x / 100) * rect.width,
+              top: (marqueeBox.y / 100) * rect.height,
+              width: (marqueeBox.w / 100) * rect.width,
+              height: (marqueeBox.h / 100) * rect.height,
+            }}
+            data-export-hidden
+          />
+        )}
+
+        {selectedIds.size > 1 && (
+          <div
+            className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-foreground/90 text-background pl-3 pr-1.5 py-1 text-[11px] font-medium shadow"
+            data-export-hidden
+          >
+            <span>{selectedIds.size}개 선택됨</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const ids = Array.from(selectedIds);
+                if (onElementsRemove) onElementsRemove(ids, sectionIndex);
+                else ids.forEach((id) => onElementRemove(id, sectionIndex));
+                applySelection(new Set());
+              }}
+              className="inline-flex items-center gap-1 rounded-full bg-background/20 hover:bg-background/30 px-2 py-1 transition-colors"
+              aria-label="선택한 요소 모두 삭제"
+            >
+              <Trash2 className="w-3 h-3" /> 삭제
+            </button>
+          </div>
+        )}
+
         {/* Movement paths */}
         <svg
           className="absolute inset-0 w-full h-full z-[8]"
@@ -621,7 +802,7 @@ const StageGrid: React.FC<StageGridProps> = ({
           </defs>
           {moveElements.map((el) => {
             const pts = el.points!.map((p) => pointToPx(p, rect));
-            const isSelected = selectedId === el.id;
+            const isSelected = selectedIds.has(el.id);
             return (
               <g key={el.id}>
                 {/* Invisible fat stroke widens the click target */}
@@ -675,7 +856,7 @@ const StageGrid: React.FC<StageGridProps> = ({
 
         {/* Elements */}
         {boxElements.map((el) => {
-          const isSelected = selectedId === el.id;
+          const isSelected = selectedIds.has(el.id);
           const box = toPxRect(el, rect);
           const rotateBelow = box.top < 30;
           return (
@@ -704,10 +885,9 @@ const StageGrid: React.FC<StageGridProps> = ({
               }}
               onPointerDown={(e) => beginPointerDrag(e, el.id)}
               onContextMenu={(e) => handleContextMenu(e, el.id)}
-              onFocus={() => setSelectedId(el.id)}
+              onFocus={() => applySelection(new Set([el.id]))}
               onClick={(e) => {
                 e.stopPropagation();
-                setSelectedId(el.id);
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -749,7 +929,7 @@ const StageGrid: React.FC<StageGridProps> = ({
                 />
               )}
 
-              {onElementRotate && (
+              {onElementRotate && selectedIds.size <= 1 && (
                 <div
                   data-resize-handle
                   aria-label="회전"
@@ -763,7 +943,7 @@ const StageGrid: React.FC<StageGridProps> = ({
                   <RotateCw className="w-3 h-3 text-secondary-foreground" />
                 </div>
               )}
-              {onElementResize && (
+              {onElementResize && selectedIds.size <= 1 && (
                 <div
                   data-resize-handle
                   aria-label="크기 조절"
