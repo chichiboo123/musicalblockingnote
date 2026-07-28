@@ -442,7 +442,14 @@ const ChoreographyPage: React.FC = () => {
         onRecolor={(color) => selection.element && el.recolor(selection.element.id, color, selection.sectionIndex)}
       />
 
-      <main id="main" className="container mx-auto px-3 sm:px-4 py-5" style={{ paddingBottom: "calc(var(--palette-h, 96px) + 24px)" }}>
+      <main
+        id="main"
+        className="container mx-auto px-3 sm:px-4 py-5"
+        style={{
+          paddingBottom: "calc(var(--palette-h, 96px) + 24px)",
+          paddingLeft: "calc(var(--palette-w, 0px) + 0.75rem)",
+        }}
+      >
         <div className="max-w-3xl mx-auto">
           <div className="grid md:grid-cols-2 gap-4 mb-5">
             <div>
@@ -543,6 +550,7 @@ const ChoreographyPage: React.FC = () => {
                           onElementDrop={el.add}
                           onElementMove={el.move}
                           onElementRemove={el.remove}
+                          onElementsRemove={el.removeMany}
                           onElementResize={el.resize}
                           onElementRotate={el.rotate}
                           onContextMenu={setContextMenu}

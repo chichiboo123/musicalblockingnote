@@ -44,6 +44,16 @@ export function useElementActions(update: Updater, snapshot: () => void) {
     [update, snapshot]
   );
 
+  const removeMany = useCallback(
+    (ids: string[], section: number) => {
+      if (!ids.length) return;
+      snapshot();
+      const idSet = new Set(ids);
+      update(section, (els) => els.filter((el) => !idSet.has(el.id)));
+    },
+    [update, snapshot]
+  );
+
   const replaceAll = useCallback(
     (section: number, next: BlockingElement[]) => update(section, () => next),
     [update]
@@ -119,7 +129,7 @@ export function useElementActions(update: Updater, snapshot: () => void) {
   );
 
   return useMemo(
-    () => ({ move, resize, rotate, add, remove, replaceAll, duplicate, reorder, recolor, setText, addMovePath }),
-    [move, resize, rotate, add, remove, replaceAll, duplicate, reorder, recolor, setText, addMovePath]
+    () => ({ move, resize, rotate, add, remove, removeMany, replaceAll, duplicate, reorder, recolor, setText, addMovePath }),
+    [move, resize, rotate, add, remove, removeMany, replaceAll, duplicate, reorder, recolor, setText, addMovePath]
   );
 }
