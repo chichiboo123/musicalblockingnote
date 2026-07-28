@@ -41,9 +41,26 @@ interface StageGridProps {
   orientation?: StageOrientation;
   /** Highlights the stage that palette clicks and shortcuts will act on. */
   isActive?: boolean;
+  /** Downstage numbering strip: centre 0 with 1–6 running out to each side. */
+  showNumbers?: boolean;
 }
 
 const SNAP_THRESHOLD = 1.4; // percent of the stage box
+
+/** How close (px) a click must land to a movement path to grab it. */
+const PATH_HIT_PX = 12;
+/** Pointer travel (px) that turns a tap into a freehand stroke. */
+const DRAW_DRAG_PX = 5;
+/** Minimum spacing (percent) between captured freehand points. */
+const FREEHAND_STEP_PCT = 1.4;
+/** Clicking this close (percent) to the last point closes the path. */
+const CLOSE_FINISH_PCT = 5;
+
+/** Ticks for the downstage numbering strip: centre 0, then 1–6 out each way. */
+const NUMBER_TICKS = Array.from({ length: 13 }, (_, i) => {
+  const n = i - 6;
+  return { n, x: 50 + n * (100 / 14) };
+});
 
 /** Percent-space axis-aligned overlap test used for marquee (rubber-band) selection. */
 const rectsOverlap = (
@@ -101,6 +118,7 @@ const StageGrid: React.FC<StageGridProps> = ({
   showCenterGuides = false,
   orientation = "performer",
   isActive = false,
+  showNumbers = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<Rect>({ width: 0, height: 0 });
@@ -114,8 +132,15 @@ const StageGrid: React.FC<StageGridProps> = ({
   const [draft, setDraft] = useState<StagePoint[]>([]);
   const [hoverPoint, setHoverPoint] = useState<StagePoint | null>(null);
   const [marqueeBox, setMarqueeBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [hoverPathId, setHoverPathId] = useState<string | null>(null);
   const movedRef = useRef(false);
   const marqueeStartRef = useRef<{ xPct: number; yPct: number; ctrl: boolean } | null>(null);
+  const drawPointerRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    at: StagePoint;
+    dragged: boolean;
+  } | null>(null);
   const dragGroupRef = useRef<{
     anchorId: string;
     startClientX: number;
@@ -185,6 +210,30 @@ const StageGrid: React.FC<StageGridProps> = ({
     x: Math.min(Math.max(x, -w * 0.8), 100 - w * 0.2),
     y: Math.min(Math.max(y, -h * 0.8), 100 - h * 0.2),
   }), []);
+
+  const moveElements = useMemo(
+    () => elements.filter((el) => el.type === "move" && el.points && el.points.length > 1),
+    [elements]
+  );
+  const boxElements = useMemo(() => elements.filter((el) => el.type !== "move"), [elements]);
+
+  /**
+   * Movement paths are strokes, not boxes, so they get hit-tested by distance.
+   * Later paths win, matching the painter's order they are drawn in.
+   */
+  const hitTestMovePath = useCallback(
+    (at: StagePoint): string | null => {
+      if (!rect.width) return null;
+      const px = { x: (at.x / 100) * rect.width, y: (at.y / 100) * rect.height };
+      let hit: string | null = null;
+      for (const el of moveElements) {
+        const pts = el.points!.map((p) => pointToPx(p, rect));
+        if (distanceToPolyline(px.x, px.y, pts) <= PATH_HIT_PX) hit = el.id;
+      }
+      return hit;
+    },
+    [moveElements, rect]
+  );
 
   const localPct = useCallback(
     (clientX: number, clientY: number): StagePoint | null => {
@@ -286,26 +335,36 @@ const StageGrid: React.FC<StageGridProps> = ({
   );
 
   // ---- Movement path drawing -------------------------------------------------
+  // The draft is mirrored into a ref because a stroke is finished from the
+  // pointerup handler, which can run before React has flushed the last
+  // pointermove — reading state there would drop the final points.
+  const draftRef = useRef<StagePoint[]>([]);
+  const setDraftPoints = useCallback((points: StagePoint[]) => {
+    draftRef.current = points;
+    setDraft(points);
+  }, []);
+
   const startedDraft = useRef(false);
   useEffect(() => {
     if (drawing) {
       if (!startedDraft.current) {
         startedDraft.current = true;
-        setDraft(drawing.start ? [drawing.start] : []);
+        setDraftPoints(drawing.start ? [drawing.start] : []);
       }
     } else {
       startedDraft.current = false;
-      setDraft([]);
+      setDraftPoints([]);
       setHoverPoint(null);
     }
-  }, [drawing]);
+  }, [drawing, setDraftPoints]);
 
   const finishDraft = useCallback(() => {
-    if (draft.length >= 2) onDrawFinish?.(draft);
+    const points = draftRef.current;
+    if (points.length >= 2) onDrawFinish?.(points);
     else onDrawCancel?.();
-    setDraft([]);
+    setDraftPoints([]);
     setHoverPoint(null);
-  }, [draft, onDrawFinish, onDrawCancel]);
+  }, [onDrawFinish, onDrawCancel, setDraftPoints]);
 
   useEffect(() => {
     if (!drawing) return;
@@ -315,16 +374,16 @@ const StageGrid: React.FC<StageGridProps> = ({
         finishDraft();
       } else if (e.key === "Escape") {
         e.preventDefault();
-        setDraft([]);
+        setDraftPoints([]);
         onDrawCancel?.();
       } else if (e.key === "Backspace") {
         e.preventDefault();
-        setDraft((prev) => prev.slice(0, -1));
+        setDraftPoints(draftRef.current.slice(0, -1));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawing, finishDraft, onDrawCancel]);
+  }, [drawing, finishDraft, onDrawCancel, setDraftPoints]);
 
   // ---- Pointer interactions --------------------------------------------------
   const longPressTimerRef = useRef<number | null>(null);
@@ -413,12 +472,36 @@ const StageGrid: React.FC<StageGridProps> = ({
     }
   };
 
-  /** Starts marquee (rubber-band) selection when the pointer goes down on empty stage. */
+  /**
+   * Everything that starts on bare stage: drawing a path, grabbing a path that
+   * was already drawn, or rubber-band selecting. This all has to happen on
+   * pointerdown — capturing the pointer here retargets the follow-up `click`,
+   * so a separate click handler would never see it.
+   */
   const handleStagePointerDown = (e: React.PointerEvent) => {
-    if (drawing || draggingId || resizingId || rotatingId) return;
     if (e.button !== 0 && e.pointerType === "mouse") return;
     const at = localPct(e.clientX, e.clientY);
     if (!at) return;
+
+    if (drawing) {
+      drawPointerRef.current = { startClientX: e.clientX, startClientY: e.clientY, at, dragged: false };
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    if (draggingId || resizingId || rotatingId) return;
+
+    // A path already on the stage behaves like any other element.
+    const hit = hitTestMovePath(at);
+    if (hit) {
+      beginPointerDrag(e, hit);
+      return;
+    }
+
     marqueeStartRef.current = { xPct: at.x, yPct: at.y, ctrl: e.ctrlKey || e.metaKey };
     movedRef.current = false;
     try {
@@ -435,7 +518,24 @@ const StageGrid: React.FC<StageGridProps> = ({
 
       if (drawing) {
         const at = localPct(e.clientX, e.clientY);
-        if (at) setHoverPoint(at);
+        if (!at) return;
+        setHoverPoint(at);
+
+        // Dragging paints the path freehand, so a stroke can be drawn in one
+        // gesture instead of clicking point after point and hunting for a way
+        // to finish.
+        const dp = drawPointerRef.current;
+        if (!dp) return;
+        if (!dp.dragged) {
+          if (Math.hypot(e.clientX - dp.startClientX, e.clientY - dp.startClientY) < DRAW_DRAG_PX) return;
+          dp.dragged = true;
+          setDraftPoints([...draftRef.current, dp.at]);
+          return;
+        }
+        const last = draftRef.current[draftRef.current.length - 1];
+        if (!last || Math.hypot(at.x - last.x, at.y - last.y) >= FREEHAND_STEP_PCT) {
+          setDraftPoints([...draftRef.current, at]);
+        }
         return;
       }
 
@@ -456,6 +556,14 @@ const StageGrid: React.FC<StageGridProps> = ({
           }
         }
         return;
+      }
+
+      // Nothing in flight — track whether a path is under the pointer so the
+      // cursor can advertise that it is draggable.
+      if (!draggingId && !resizingId && !rotatingId) {
+        const at = localPct(e.clientX, e.clientY);
+        const id = at ? hitTestMovePath(at) : null;
+        setHoverPathId((prev) => (prev === id ? prev : id));
       }
 
       if (rotatingId && onElementRotate) {
@@ -499,11 +607,11 @@ const StageGrid: React.FC<StageGridProps> = ({
       let dx = ((e.clientX - group.startClientX) / r.width) * 100;
       let dy = ((e.clientY - group.startClientY) / r.height) * 100;
 
-      // Canva-style snapping: align the anchor element's center to the stage center
-      const anchorX = anchorStart.x + dx;
-      const anchorY = anchorStart.y + dy;
-      const snappedX = Math.abs(anchorX + anchorSize.width / 2 - 50) <= SNAP_THRESHOLD;
-      const snappedY = Math.abs(anchorY + anchorSize.height / 2 - 50) <= SNAP_THRESHOLD;
+      // Canva-style snapping: align the anchor element's center to the stage
+      // center. A path has no box to centre, so it is dragged unsnapped.
+      const isPathAnchor = anchorEl.type === "move";
+      const snappedX = !isPathAnchor && Math.abs(anchorStart.x + dx + anchorSize.width / 2 - 50) <= SNAP_THRESHOLD;
+      const snappedY = !isPathAnchor && Math.abs(anchorStart.y + dy + anchorSize.height / 2 - 50) <= SNAP_THRESHOLD;
       if (snappedX) dx = 50 - anchorSize.width / 2 - anchorStart.x;
       if (snappedY) dy = 50 - anchorSize.height / 2 - anchorStart.y;
       setSnap((prev) => (prev.x === snappedX && prev.y === snappedY ? prev : { x: snappedX, y: snappedY }));
@@ -514,23 +622,54 @@ const StageGrid: React.FC<StageGridProps> = ({
       group.positions.forEach((startPos, id) => {
         const el = elements.find((item) => item.id === id);
         if (!el) return;
+        // Clamping keeps a box on stage; a path is clamped by its own points
+        // instead, so leave the delta alone or the shape would be dragged apart.
+        if (el.type === "move") {
+          onElementMove(id, { x: startPos.x + dx, y: startPos.y + dy }, sectionIndex);
+          return;
+        }
         const size = el.size ?? DEFAULT_SIZE_PCT[el.type];
-        const pos = clampPosition(startPos.x + dx, startPos.y + dy, size.width, size.height);
-        onElementMove(id, pos, sectionIndex);
+        onElementMove(id, clampPosition(startPos.x + dx, startPos.y + dy, size.width, size.height), sectionIndex);
       });
     },
     [drawing, localPct, draggingId, onElementMove, sectionIndex, resizingId, resizeStart,
-     onElementResize, rotatingId, onElementRotate, elements, clampPosition, cancelLongPress, onMoveStart]
+     onElementResize, rotatingId, onElementRotate, elements, clampPosition, cancelLongPress,
+     onMoveStart, hitTestMovePath, setDraftPoints]
   );
 
   const handlePointerUp = () => {
     cancelLongPress();
+
+    // Finishing a path: releasing after a drag commits the stroke, and a plain
+    // tap either adds a point or — when it lands back on the last one — closes
+    // the path, so there is always an obvious way to stop drawing.
+    if (drawing && drawPointerRef.current) {
+      const dp = drawPointerRef.current;
+      drawPointerRef.current = null;
+      if (dp.dragged) {
+        if (draftRef.current.length >= 2) finishDraft();
+        return;
+      }
+      const points = draftRef.current;
+      const last = points[points.length - 1];
+      if (points.length >= 2 && last && Math.hypot(dp.at.x - last.x, dp.at.y - last.y) <= CLOSE_FINISH_PCT) {
+        finishDraft();
+      } else {
+        setDraftPoints([...points, dp.at]);
+      }
+      return;
+    }
+
     if (marqueeStartRef.current) {
       const start = marqueeStartRef.current;
       if (movedRef.current && marqueeBox) {
         const hitIds = elements
-          .filter((el) => el.type !== "move")
           .filter((el) => {
+            if (el.type === "move") {
+              return !!el.points?.some((p) =>
+                rectsOverlap(marqueeBox, { x: p.x, y: p.y, w: 0.01, h: 0.01 })
+              );
+            }
             const size = el.size ?? DEFAULT_SIZE_PCT[el.type];
             return rectsOverlap(marqueeBox, { x: el.position.x, y: el.position.y, w: size.width, h: size.height });
           })
@@ -546,6 +685,7 @@ const StageGrid: React.FC<StageGridProps> = ({
       marqueeStartRef.current = null;
       setMarqueeBox(null);
     }
+    drawPointerRef.current = null;
     setDraggingId(null);
     setResizingId(null);
     setRotatingId(null);
@@ -561,16 +701,12 @@ const StageGrid: React.FC<StageGridProps> = ({
     onContextMenu?.({ show: true, x: e.clientX, y: e.clientY, targetId: elementId, sectionIndex });
   };
 
-  const handleStageClick = (e: React.MouseEvent) => {
-    onActivate?.(sectionIndex);
-    if (drawing) {
-      const at = localPct(e.clientX, e.clientY);
-      if (at) setDraft((prev) => [...prev, at]);
-    }
-  };
+  // Points are added on pointerup, not click — the pointer capture taken on
+  // pointerdown retargets click, and doing both would double up every point.
+  const handleStageClick = () => onActivate?.(sectionIndex);
 
   const handleStageDoubleClick = () => {
-    if (drawing && draft.length >= 2) finishDraft();
+    if (drawing && draftRef.current.length >= 2) finishDraft();
   };
 
   const handleStageContextMenu = (e: React.MouseEvent) => {
@@ -579,7 +715,11 @@ const StageGrid: React.FC<StageGridProps> = ({
       finishDraft();
       return;
     }
-    onContextMenu?.({ show: true, x: e.clientX, y: e.clientY, targetId: null, sectionIndex });
+    // Right-clicking a path should offer that path's actions, not the stage's.
+    const at = localPct(e.clientX, e.clientY);
+    const hit = at ? hitTestMovePath(at) : null;
+    if (hit && !selectedIds.has(hit)) applySelection(new Set([hit]));
+    onContextMenu?.({ show: true, x: e.clientX, y: e.clientY, targetId: hit, sectionIndex });
   };
 
   // Group consecutive arrow-key moves into one undo step
@@ -661,34 +801,6 @@ const StageGrid: React.FC<StageGridProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds, elements, onElementRemove, onElementsRemove, onElementMove, onElementRotate, sectionIndex, clampPosition, onMoveStart, drawing, applySelection]);
 
-  const moveElements = elements.filter((el) => el.type === "move" && el.points && el.points.length > 1);
-  const boxElements = elements.filter((el) => el.type !== "move");
-
-  /** Hit-test movement paths so they can be selected without blocking the stage. */
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (drawing || !rect.width) return;
-    const at = localPct(e.clientX, e.clientY);
-    if (!at) return;
-    const px = { x: (at.x / 100) * rect.width, y: (at.y / 100) * rect.height };
-    let hit: string | null = null;
-    for (const el of moveElements) {
-      const pts = el.points!.map((p) => pointToPx(p, rect));
-      if (distanceToPolyline(px.x, px.y, pts) <= 10) hit = el.id;
-    }
-    if (hit) {
-      e.stopPropagation();
-      if (e.ctrlKey || e.metaKey) {
-        const next = new Set(selectedIds);
-        if (next.has(hit)) next.delete(hit);
-        else next.add(hit);
-        applySelection(next);
-      } else {
-        applySelection(new Set([hit]));
-      }
-      onActivate?.(sectionIndex);
-    }
-  };
-
   const draftPx = draft.map((p) => pointToPx(p, rect));
   const previewPx = hoverPoint ? [...draftPx, pointToPx(hoverPoint, rect)] : draftPx;
 
@@ -700,7 +812,9 @@ const StageGrid: React.FC<StageGridProps> = ({
         ref={containerRef}
         className={`stage-grid relative w-full select-none overflow-hidden touch-none aspect-[3/2] transition-shadow ${
           isDragOver ? "ring-2 ring-primary/60 bg-primary/5" : ""
-        } ${isActive && !isDragOver ? "ring-2 ring-primary/35" : ""} ${drawing ? "cursor-crosshair" : ""}`}
+        } ${isActive && !isDragOver ? "ring-2 ring-primary/35" : ""} ${
+          drawing ? "cursor-crosshair" : hoverPathId ? "cursor-move" : ""
+        }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -708,6 +822,7 @@ const StageGrid: React.FC<StageGridProps> = ({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onPointerLeave={() => setHoverPathId(null)}
         onClick={handleStageClick}
         onDoubleClick={handleStageDoubleClick}
         onContextMenu={handleStageContextMenu}
@@ -730,6 +845,34 @@ const StageGrid: React.FC<StageGridProps> = ({
           <div className="absolute inset-0 pointer-events-none z-[5]" data-export-hidden>
             <div className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 border-l border-dashed border-primary/40" />
             <div className="absolute top-1/2 left-0 right-0 h-px -translate-y-1/2 border-t border-dashed border-primary/40" />
+          </div>
+        )}
+
+        {/* Downstage numbering: centre 0 with 1–6 counting out to each side.
+            Kept in exports — it is a stage reference, not an editing aid. */}
+        {showNumbers && rect.width > 0 && (
+          <div className="absolute inset-0 pointer-events-none z-[6]">
+            {NUMBER_TICKS.map(({ n, x }) => {
+              const isCentre = n === 0;
+              return (
+                <div
+                  key={n}
+                  className="absolute flex flex-col items-center gap-px -translate-x-1/2"
+                  style={{ left: `${x}%`, bottom: `${rect.height * 0.02}px` }}
+                >
+                  <span
+                    className={isCentre ? "font-bold text-primary leading-none" : "font-semibold text-muted-foreground leading-none"}
+                    style={{ fontSize: Math.max(6, rect.width * 0.022) }}
+                  >
+                    {Math.abs(n)}
+                  </span>
+                  <span
+                    className={isCentre ? "w-px bg-primary" : "w-px bg-muted-foreground/50"}
+                    style={{ height: rect.height * (isCentre ? 0.085 : 0.05) }}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -777,11 +920,11 @@ const StageGrid: React.FC<StageGridProps> = ({
         )}
 
         {/* Movement paths */}
+        {/* Purely visual — paths are hit-tested geometrically on pointerdown, so
+            the overlay must never swallow pointer events from the stage. */}
         <svg
-          className="absolute inset-0 w-full h-full z-[8]"
-          style={{ pointerEvents: drawing ? "none" : "auto" }}
+          className="absolute inset-0 w-full h-full z-[8] pointer-events-none"
           viewBox={`0 0 ${rect.width || 1} ${rect.height || 1}`}
-          onClick={handleOverlayClick}
           aria-hidden="true"
         >
           <defs>
@@ -805,8 +948,19 @@ const StageGrid: React.FC<StageGridProps> = ({
             const isSelected = selectedIds.has(el.id);
             return (
               <g key={el.id}>
-                {/* Invisible fat stroke widens the click target */}
-                <path d={smoothPath(pts)} stroke="transparent" strokeWidth={14} fill="none" style={{ cursor: "pointer" }} />
+                {/* A halo makes the current selection obvious the way the ring
+                    around a box element does. */}
+                {isSelected && (
+                  <path
+                    d={smoothPath(pts)}
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={9}
+                    strokeLinecap="round"
+                    fill="none"
+                    opacity={0.28}
+                    data-export-hidden
+                  />
+                )}
                 <path
                   d={smoothPath(pts)}
                   stroke={el.color || "#5b3fd6"}
@@ -847,9 +1001,28 @@ const StageGrid: React.FC<StageGridProps> = ({
                 strokeLinecap="round"
                 fill="none"
               />
-              {draftPx.map((p, i) => (
-                <circle key={i} cx={p.x} cy={p.y} r={4} fill={drawing.color} stroke="#fff" strokeWidth={1.5} />
-              ))}
+              {draftPx.map((p, i) => {
+                // The last point doubles as the finish button: tapping it again
+                // closes the path, so it is drawn as a target ring.
+                const isLast = i === draftPx.length - 1 && draftPx.length >= 2;
+                return (
+                  <g key={i}>
+                    {isLast && (
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r={9}
+                        fill="none"
+                        stroke={drawing.color}
+                        strokeWidth={1.5}
+                        strokeDasharray="3 3"
+                        opacity={0.9}
+                      />
+                    )}
+                    <circle cx={p.x} cy={p.y} r={isLast ? 5 : 4} fill={drawing.color} stroke="#fff" strokeWidth={1.5} />
+                  </g>
+                );
+              })}
             </g>
           )}
         </svg>
@@ -964,11 +1137,14 @@ const StageGrid: React.FC<StageGridProps> = ({
             data-export-hidden
           >
             <span className="truncate">
-              무대를 클릭해 경로를 이어가세요 · {draft.length}점
+              {draft.length < 2
+                ? "끌어서 그리거나, 클릭으로 점을 찍으세요"
+                : `마지막 점을 다시 누르면 완료 · ${draft.length}점`}
             </span>
             <span className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   finishDraft();
@@ -980,9 +1156,10 @@ const StageGrid: React.FC<StageGridProps> = ({
               </button>
               <button
                 type="button"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setDraft([]);
+                  setDraftPoints([]);
                   onDrawCancel?.();
                 }}
                 className="inline-flex items-center gap-1 rounded-md bg-background/25 px-1.5 py-0.5"

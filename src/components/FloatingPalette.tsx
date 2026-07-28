@@ -217,7 +217,7 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
               <div className="mt-5 pt-4 border-t border-border">
                 {heading("이동 경로")}
                 <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
-                  인물을 고르고 무대를 클릭해 지나갈 지점을 이어 주세요.
+                  인물을 고른 뒤 무대를 끌어서 그리세요. 클릭으로 점을 찍고 마지막 점을 다시 눌러도 됩니다.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {cast.map((c) => (

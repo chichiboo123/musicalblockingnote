@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Download, Upload, Image, FileText, Undo2, Redo2, RotateCcw,
-  Crosshair, HelpCircle, Link2, Music, Film, Compass, MoreHorizontal,
+  Crosshair, HelpCircle, Link2, Music, Film, Compass, MoreHorizontal, Ruler,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -30,6 +30,8 @@ interface EditorHeaderProps {
   onRedo: () => void;
   showGuides: boolean;
   onToggleGuides: (value: boolean) => void;
+  showNumbers: boolean;
+  onToggleNumbers: (value: boolean) => void;
   orientation: StageOrientation;
   onToggleOrientation: (value: StageOrientation) => void;
   onExportPDF: () => void;
@@ -56,6 +58,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
   onRedo,
   showGuides,
   onToggleGuides,
+  showNumbers,
+  onToggleNumbers,
   orientation,
   onToggleOrientation,
   onExportPDF,
@@ -162,6 +166,21 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
             <TooltipContent>중앙 안내선 {showGuides ? "끄기" : "켜기"}</TooltipContent>
           </Tooltip>
 
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Toggle
+                size="sm"
+                pressed={showNumbers}
+                onPressedChange={onToggleNumbers}
+                aria-label="무대 넘버링 표시"
+                className="h-9 px-2 hidden sm:inline-flex"
+              >
+                <Ruler className="w-3.5 h-3.5" />
+              </Toggle>
+            </TooltipTrigger>
+            <TooltipContent>무대 넘버링 {showNumbers ? "끄기" : "켜기"}</TooltipContent>
+          </Tooltip>
+
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -211,6 +230,14 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                 </span>
                 <Toggle size="sm" pressed={showGuides} onPressedChange={onToggleGuides} aria-label="중앙 안내선" className="h-7 px-2">
                   {showGuides ? "켬" : "끔"}
+                </Toggle>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="justify-between">
+                <span className="inline-flex items-center">
+                  <Ruler className="w-4 h-4 mr-2" /> 무대 넘버링
+                </span>
+                <Toggle size="sm" pressed={showNumbers} onPressedChange={onToggleNumbers} aria-label="무대 넘버링" className="h-7 px-2">
+                  {showNumbers ? "켬" : "끔"}
                 </Toggle>
               </DropdownMenuItem>
               <DropdownMenuItem

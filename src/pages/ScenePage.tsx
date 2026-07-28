@@ -68,7 +68,7 @@ const helpSteps = (
     <li>맨 위에 <strong className="text-foreground">제목과 등장인물</strong>을 입력하세요. 인물 칩을 누르면 색을 바꿀 수 있어요.</li>
     <li>장면을 <strong className="text-foreground">장(章)</strong>으로 묶고, 제목 왼쪽 화살표로 접거나 펼칩니다.</li>
     <li>아래 <strong className="text-foreground">요소 팔레트</strong>에서 인물·도형·메모를 무대로 끌어다 놓거나 클릭해 가운데에 넣으세요.</li>
-    <li><strong className="text-foreground">이동 경로</strong>는 인물 탭에서 이름을 고른 뒤, 무대를 클릭해 지나갈 지점을 이어 그리고 <kbd>Enter</kbd>로 마칩니다.</li>
+    <li><strong className="text-foreground">이동 경로</strong>는 인물 탭에서 이름을 고른 뒤 무대를 <strong className="text-foreground">끌어서</strong> 한 번에 그립니다. 점을 하나씩 찍으려면 클릭한 뒤 마지막 점을 다시 누르세요. 그린 경로는 다른 요소처럼 끌어 옮기고 눌러서 지울 수 있어요.</li>
     <li>장면 카드의 <strong className="text-foreground">복제</strong>로 앞 장면 배치를 이어받고, 손잡이를 끌어 순서를 바꿉니다.</li>
     <li>무대가 작아 보이면 오른쪽 위 <strong className="text-foreground">열 수</strong>를 1열로 바꿔 크게 편집하세요.</li>
   </ol>
@@ -93,6 +93,7 @@ const ScenePage: React.FC = () => {
   const [cast, setCast] = usePersistentState<Character[]>(`${STORAGE_KEY}:cast`, legacyCast);
   const [sceneGroups, setSceneGroups] = usePersistentState<SceneGroup[]>(`${STORAGE_KEY}:groups`, DEFAULT_GROUPS);
   const [showGuides, setShowGuides] = usePersistentState(`${STORAGE_KEY}:guides`, true);
+  const [showNumbers, setShowNumbers] = usePersistentState(`${STORAGE_KEY}:numbers`, false);
   const [orientation, setOrientation] = usePersistentState<StageOrientation>(`${STORAGE_KEY}:orientation`, "performer");
   const [columns, setColumns] = usePersistentState<number>(`${STORAGE_KEY}:columns`, 2);
 
@@ -439,7 +440,7 @@ const ScenePage: React.FC = () => {
     setDrawing({ sectionIndex: targetIndex, color: character.color, label: character.name });
     toast({
       title: `${character.name}의 이동 경로`,
-      description: "무대를 클릭해 지나갈 지점을 이어 주세요. Enter로 마치고 Esc로 취소합니다.",
+      description: "무대를 끌어서 그리거나, 클릭으로 점을 찍고 마지막 점을 다시 누르면 완료됩니다. Esc로 취소합니다.",
     });
   };
 
@@ -533,6 +534,8 @@ const ScenePage: React.FC = () => {
         onRedo={handleRedo}
         showGuides={showGuides}
         onToggleGuides={setShowGuides}
+        showNumbers={showNumbers}
+        onToggleNumbers={setShowNumbers}
         orientation={orientation}
         onToggleOrientation={setOrientation}
         onExportPDF={handleExportPDF}
@@ -782,6 +785,7 @@ const ScenePage: React.FC = () => {
                                     onDrawFinish={handleDrawFinish}
                                     onDrawCancel={() => setDrawing(null)}
                                     showCenterGuides={showGuides}
+                                    showNumbers={showNumbers}
                                     orientation={orientation}
                                     isActive={isActive}
                                     compact={columns > 1}
