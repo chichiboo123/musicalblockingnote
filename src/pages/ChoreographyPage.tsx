@@ -27,6 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePersistentState, clearPersistentState, useSaveStatus } from "@/hooks/use-persistent-state";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 import { useElementActions } from "@/hooks/use-element-actions";
+import { cropDrawnSvg } from "@/lib/svg-fit";
 import { exportAsJPG, exportAsPDF } from "@/utils/exportUtils";
 import { sanitizeFilename } from "@/lib/utils";
 import { buildShareUrl, decodeShare, copyToClipboard } from "@/lib/share";
@@ -115,6 +116,14 @@ const ChoreographyPage: React.FC = () => {
   );
 
   const el = useElementActions(updateSectionElements, snapshot);
+
+  // Patterns saved before the canvas started cropping still carry the full
+  // 300×300 viewBox, which would place them inside a box far larger than the
+  // sketch. Re-crop on read so old patterns behave like new ones.
+  const fittedPatterns = useMemo(
+    () => customPatterns.map((p) => ({ ...p, svg: cropDrawnSvg(p.svg) })),
+    [customPatterns]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -607,7 +616,7 @@ const ChoreographyPage: React.FC = () => {
       <FloatingPalette
         cast={cast}
         paths={recommendedPaths}
-        customPatterns={customPatterns}
+        customPatterns={fittedPatterns}
         onDeletePattern={handleDeletePattern}
         onOpenDrawing={() => setShowDrawing(true)}
         onAddElement={handleAddElement}

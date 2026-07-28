@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from "react";
 import { Undo2, Eraser, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { viewBoxFromBounds } from "@/lib/svg-fit";
 
 interface DrawingCanvasProps {
   onSavePattern: (svg: string) => void;
@@ -91,7 +92,18 @@ const DrawingCanvas: React.FC<DrawingCanvasProps> = ({ onSavePattern }) => {
         return `<path d="${d}" stroke="#333" stroke-width="2" fill="none" stroke-linecap="round"/>`;
       })
       .join("");
-    const svg = `<svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">${svgPaths}</svg>`;
+    // Crop to the strokes rather than keeping the whole canvas: the viewBox is
+    // what the placed element is sized from, so a small sketch saved at full
+    // canvas size would land on the stage inside a box several times its own
+    // width, with the resize handle stranded far from the drawing.
+    const all = paths.flat();
+    const viewBox = viewBoxFromBounds(
+      Math.min(...all.map((p) => p.x)),
+      Math.min(...all.map((p) => p.y)),
+      Math.max(...all.map((p) => p.x)),
+      Math.max(...all.map((p) => p.y))
+    );
+    const svg = `<svg viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg">${svgPaths}</svg>`;
     onSavePattern(svg);
     handleClear();
   };
