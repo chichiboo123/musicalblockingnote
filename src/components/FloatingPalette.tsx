@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Plus, X, Users, Route, PenLine, MousePointerClick, Type, Spline, ChevronDown } from "lucide-react";
+import { Plus, X, Users, Route, PenLine, MousePointerClick, Type, Spline, ChevronDown, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import DraggableElement from "@/components/DraggableElement";
 import PersonIcon from "@/components/PersonIcon";
@@ -26,11 +26,28 @@ interface FloatingPaletteProps {
 type TabKey = "character" | "path" | "note";
 
 const OPEN_KEY = "blocking:palette-open";
+const DESKTOP_QUERY = "(min-width: 640px)";
+
+const useIsDesktop = () => {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(DESKTOP_QUERY).matches
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    const onChange = () => setIsDesktop(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isDesktop;
+};
 
 /**
  * A docked toolbar so elements can be dragged (or clicked) onto the active
- * stage. It publishes its own height as `--palette-h` so the page can reserve
- * space instead of hiding the stage the user is editing behind it.
+ * stage. On desktop it docks to the left edge (vertical panel) so it never
+ * covers the stage being edited; on narrow/mobile screens it stays a bottom
+ * sheet since there isn't enough horizontal room for a side panel. It
+ * publishes its own size as `--palette-h` / `--palette-w` so the page can
+ * reserve space instead of hiding the stage behind it.
  */
 const FloatingPalette: React.FC<FloatingPaletteProps> = ({
   cast,
@@ -43,6 +60,7 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
   targetLabel,
   shapesFirst = false,
 }) => {
+  const isDesktop = useIsDesktop();
   const [open, setOpen] = useState(() => {
     try {
       const stored = localStorage.getItem(OPEN_KEY);
@@ -65,27 +83,42 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
     }
   }, [open]);
 
-  // Publish the palette height so <main> can pad itself and never be covered.
+  // Publish the palette size so <main> can pad itself and never be covered.
   useEffect(() => {
     const node = rootRef.current;
-    const setVar = (h: number) => document.documentElement.style.setProperty("--palette-h", `${Math.round(h)}px`);
+    const root = document.documentElement.style;
+    const setVars = (h: number, w: number) => {
+      root.setProperty("--palette-h", `${Math.round(h)}px`);
+      root.setProperty("--palette-w", `${Math.round(w)}px`);
+    };
     if (!node) {
-      setVar(76);
+      setVars(76, 0);
       return;
     }
-    const measure = () => setVar(node.getBoundingClientRect().height + 24);
+    const measure = () => {
+      const rect = node.getBoundingClientRect();
+      if (isDesktop) {
+        setVars(0, rect.width + 24);
+      } else {
+        setVars(rect.height + 24, 0);
+      }
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(node);
     return () => {
       ro.disconnect();
-      setVar(0);
+      setVars(0, 0);
     };
-  }, [open, tab, cast.length, customPatterns?.length]);
+  }, [open, tab, cast.length, customPatterns?.length, isDesktop]);
 
   if (!open) {
     return (
-      <div ref={rootRef} className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40" data-export-hidden>
+      <div
+        ref={rootRef}
+        className="fixed z-40 bottom-4 left-1/2 -translate-x-1/2 sm:bottom-auto sm:left-4 sm:top-1/2 sm:-translate-x-0 sm:-translate-y-1/2"
+        data-export-hidden
+      >
         <Button onClick={() => setOpen(true)} className="rounded-full shadow-elevated h-12 px-5 gap-2" aria-label="요소 팔레트 열기">
           <Plus className="w-5 h-5" />
           요소 추가
@@ -114,12 +147,12 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
   return (
     <div
       ref={rootRef}
-      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 w-[min(96vw,720px)]"
+      className="fixed z-40 bottom-3 left-1/2 -translate-x-1/2 w-[min(96vw,720px)] sm:bottom-auto sm:left-4 sm:top-1/2 sm:-translate-x-0 sm:-translate-y-1/2 sm:w-80"
       data-export-hidden
     >
-      <div className="bg-card border border-border rounded-2xl shadow-elevated overflow-hidden">
+      <div className="bg-card border border-border rounded-2xl shadow-elevated overflow-hidden flex flex-col sm:max-h-[calc(100vh-2rem)]">
         {/* Header row: tabs + target + close */}
-        <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-b border-border">
+        <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-b border-border shrink-0">
           <div className="flex items-center gap-1 overflow-x-auto">
             {shapesFirst ? (
               <>
@@ -142,7 +175,8 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
               </span>
             )}
             <Button variant="ghost" size="sm" onClick={() => setOpen(false)} aria-label="팔레트 접기">
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className="w-4 h-4 sm:hidden" />
+              <ChevronLeft className="w-4 h-4 hidden sm:block" />
             </Button>
           </div>
         </div>
@@ -152,7 +186,7 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
         )}
 
         {/* Body */}
-        <div className="p-3 pt-2 max-h-[34vh] overflow-y-auto">
+        <div className="p-3 pt-2 max-h-[34vh] sm:max-h-none overflow-y-auto">
           {tab === "character" && (
             cast.length === 0 ? (
               <p className="text-xs text-muted-foreground py-2 text-center">
@@ -297,7 +331,7 @@ const FloatingPalette: React.FC<FloatingPaletteProps> = ({
           )}
         </div>
 
-        <p className="px-3 pb-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <p className="px-3 pb-2 flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
           <MousePointerClick className="w-3.5 h-3.5 shrink-0" />
           끌어다 놓거나 <strong className="text-foreground mx-0.5">클릭</strong>하면 무대 중앙에 추가돼요.
         </p>
