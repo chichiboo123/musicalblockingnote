@@ -5,6 +5,7 @@ import {
   DEFAULT_SIZE_PCT, MIN_SIZE_PCT, distanceToPolyline, migrateElements,
   pointToPx, smoothPath, toPxRect, type Rect,
 } from "@/lib/geometry";
+import { sizeForSvg } from "@/lib/svg-fit";
 import type { BlockingElement, ContextMenuState, StageOrientation, StagePoint } from "@/types/blocking";
 
 export interface DrawingRequest {
@@ -263,7 +264,9 @@ const StageGrid: React.FC<StageGridProps> = ({
     ) => {
       const at = localPct(clientX, clientY);
       if (!at) return;
-      const size = DEFAULT_SIZE_PCT[data.type] ?? DEFAULT_SIZE_PCT.character;
+      // Shapes are sized from their artwork so the selection box lands on the
+      // drawing instead of the empty margin around it.
+      const size = data.svg ? sizeForSvg(data.svg, data.type) : DEFAULT_SIZE_PCT[data.type] ?? DEFAULT_SIZE_PCT.character;
       const position = clampPosition(at.x - size.width / 2, at.y - size.height / 2, size.width, size.height);
 
       const newElement: BlockingElement = {
