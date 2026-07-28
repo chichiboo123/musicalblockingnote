@@ -558,249 +558,250 @@ const ScenePage: React.FC = () => {
 
       <main
         id="main"
-        className="container mx-auto px-3 sm:px-4 py-5"
         style={{
-          paddingBottom: "calc(var(--palette-h, 96px) + 24px)",
-          paddingLeft: "calc(var(--palette-w, 0px) + 0.75rem)",
+          paddingLeft: "var(--palette-w, 0px)",
+          paddingBottom: "calc(var(--palette-h, 0px) + 24px)",
         }}
       >
-        <div className="grid md:grid-cols-2 gap-4 mb-5">
-          <div>
-            <label htmlFor="project-title" className="text-sm font-medium text-foreground mb-1.5 block">
-              프로젝트 제목
-            </label>
-            <Input
-              id="project-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onFocus={snapshot}
-              placeholder="예: 뮤지컬 패딩턴"
-            />
+        <div className="container mx-auto px-3 sm:px-4 py-5">
+          <div className="grid md:grid-cols-2 gap-4 mb-5">
+            <div>
+              <label htmlFor="project-title" className="text-sm font-medium text-foreground mb-1.5 block">
+                프로젝트 제목
+              </label>
+              <Input
+                id="project-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onFocus={snapshot}
+                placeholder="예: 뮤지컬 패딩턴"
+              />
+            </div>
+            <CastEditor cast={cast} onChange={setCast} onBeforeChange={snapshot} />
           </div>
-          <CastEditor cast={cast} onChange={setCast} onBeforeChange={snapshot} />
-        </div>
 
-        <SectionNav items={navItems} activeIndex={Math.max(0, targetIndex)} onSelect={focusSection} />
+          <SectionNav items={navItems} activeIndex={Math.max(0, targetIndex)} onSelect={focusSection} />
 
-        <div className="flex items-center justify-end gap-1 mt-3" data-export-hidden>
-          <span className="text-xs text-muted-foreground mr-1">한 줄에</span>
-          {DENSITY.map(({ cols, icon: Icon, label }) => (
-            <Tooltip key={cols}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={columns === cols ? "default" : "ghost"}
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() => setColumns(cols)}
-                  aria-label={label}
-                  aria-pressed={columns === cols}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{label}</TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-
-        <div className="space-y-5 mt-3">
-          {sceneGroups.map((group, groupIndex) => (
-            <section key={group.id} className="rounded-2xl border border-border bg-muted/30">
-              <div className="flex items-center gap-2 px-3 py-2.5 flex-wrap">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 p-0 shrink-0"
-                  onClick={() => toggleCollapse(groupIndex)}
-                  aria-label={group.collapsed ? "펼치기" : "접기"}
-                  aria-expanded={!group.collapsed}
-                >
-                  {group.collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </Button>
-                <Input
-                  value={group.title}
-                  onChange={(e) => handleRenameGroup(groupIndex, e.target.value)}
-                  onFocus={snapshot}
-                  className="h-8 max-w-[160px] font-semibold"
-                  aria-label="장 제목"
-                  placeholder="예: 1장"
-                />
-                <span className="text-xs text-muted-foreground shrink-0">장면 {group.scenes.length}개</span>
-                <div className="flex-1" />
-                <Button variant="outline" size="sm" className="h-8" onClick={() => handleAddScene(groupIndex)}>
-                  <Plus className="w-3.5 h-3.5 mr-1" /> 장면 추가
-                </Button>
-                {sceneGroups.length > 1 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => handleDeleteGroup(groupIndex)}
-                        aria-label="장 삭제"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>이 장 삭제</TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
-
-              {!group.collapsed && (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd(groupIndex)}>
-                  <SortableContext
-                    items={group.scenes.map((s) => `s-${group.id}-${s.id}`)}
-                    strategy={rectSortingStrategy}
+          <div className="flex items-center justify-end gap-1 mt-3" data-export-hidden>
+            <span className="text-xs text-muted-foreground mr-1">한 줄에</span>
+            {DENSITY.map(({ cols, icon: Icon, label }) => (
+              <Tooltip key={cols}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={columns === cols ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setColumns(cols)}
+                    aria-label={label}
+                    aria-pressed={columns === cols}
                   >
-                    <div className={`grid ${gridCols} gap-4 px-3 pb-3`}>
-                      {group.scenes.map((scene, sceneIdx) => {
-                        const flatIndex = sceneFlat[groupIndex][sceneIdx];
-                        const isActive = flatIndex === targetIndex;
-                        return (
-                          <SortableCard
-                            key={scene.id}
-                            id={`s-${group.id}-${scene.id}`}
-                            className="section-card p-3"
-                            exportRef={sectionRefs.current[flatIndex]}
-                            isActive={isActive}
-                            onFocusCapture={() => setActiveSection(flatIndex)}
-                          >
-                            {(handle) => (
-                              <>
-                                <ExportHeader
-                                  title={title}
-                                  sectionLabel={`${group.title || `${groupIndex + 1}장`} · 장면 ${sceneIdx + 1}`}
-                                  cast={cast}
-                                />
-                                <div className="flex items-center justify-between mb-2 gap-1">
-                                  <div className="flex items-center gap-0.5 min-w-0">
-                                    <span data-export-hidden>{handle}</span>
-                                    <h3 className="text-xs font-bold text-foreground">장면 {sceneIdx + 1}</h3>
-                                    {isActive && (
-                                      <span
-                                        className="ml-1 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-1.5"
-                                        data-export-hidden
-                                      >
-                                        작업 중
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex gap-0.5" data-export-hidden>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={() => handleDuplicateScene(flatIndex)}
-                                          aria-label="이 장면 복제"
+                    <Icon className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{label}</TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+
+          <div className="space-y-5 mt-3">
+            {sceneGroups.map((group, groupIndex) => (
+              <section key={group.id} className="rounded-2xl border border-border bg-muted/30">
+                <div className="flex items-center gap-2 px-3 py-2.5 flex-wrap">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 shrink-0"
+                    onClick={() => toggleCollapse(groupIndex)}
+                    aria-label={group.collapsed ? "펼치기" : "접기"}
+                    aria-expanded={!group.collapsed}
+                  >
+                    {group.collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </Button>
+                  <Input
+                    value={group.title}
+                    onChange={(e) => handleRenameGroup(groupIndex, e.target.value)}
+                    onFocus={snapshot}
+                    className="h-8 max-w-[160px] font-semibold"
+                    aria-label="장 제목"
+                    placeholder="예: 1장"
+                  />
+                  <span className="text-xs text-muted-foreground shrink-0">장면 {group.scenes.length}개</span>
+                  <div className="flex-1" />
+                  <Button variant="outline" size="sm" className="h-8" onClick={() => handleAddScene(groupIndex)}>
+                    <Plus className="w-3.5 h-3.5 mr-1" /> 장면 추가
+                  </Button>
+                  {sceneGroups.length > 1 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => handleDeleteGroup(groupIndex)}
+                          aria-label="장 삭제"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>이 장 삭제</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+
+                {!group.collapsed && (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd(groupIndex)}>
+                    <SortableContext
+                      items={group.scenes.map((s) => `s-${group.id}-${s.id}`)}
+                      strategy={rectSortingStrategy}
+                    >
+                      <div className={`grid ${gridCols} gap-4 px-3 pb-3`}>
+                        {group.scenes.map((scene, sceneIdx) => {
+                          const flatIndex = sceneFlat[groupIndex][sceneIdx];
+                          const isActive = flatIndex === targetIndex;
+                          return (
+                            <SortableCard
+                              key={scene.id}
+                              id={`s-${group.id}-${scene.id}`}
+                              className="section-card p-3"
+                              exportRef={sectionRefs.current[flatIndex]}
+                              isActive={isActive}
+                              onFocusCapture={() => setActiveSection(flatIndex)}
+                            >
+                              {(handle) => (
+                                <>
+                                  <ExportHeader
+                                    title={title}
+                                    sectionLabel={`${group.title || `${groupIndex + 1}장`} · 장면 ${sceneIdx + 1}`}
+                                    cast={cast}
+                                  />
+                                  <div className="flex items-center justify-between mb-2 gap-1">
+                                    <div className="flex items-center gap-0.5 min-w-0">
+                                      <span data-export-hidden>{handle}</span>
+                                      <h3 className="text-xs font-bold text-foreground">장면 {sceneIdx + 1}</h3>
+                                      {isActive && (
+                                        <span
+                                          className="ml-1 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-1.5"
+                                          data-export-hidden
                                         >
-                                          <CopyPlus className="w-3 h-3" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>배치를 이어받아 복제</TooltipContent>
-                                    </Tooltip>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={() => handleExportJPG(flatIndex)}
-                                          aria-label="이미지로 저장"
-                                        >
-                                          <Image className="w-3 h-3" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>이미지(JPG)로 저장</TooltipContent>
-                                    </Tooltip>
-                                    {totalScenes > 1 && (
+                                          작업 중
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-0.5" data-export-hidden>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
                                           <Button
                                             variant="ghost"
                                             size="sm"
                                             className="h-6 w-6 p-0"
-                                            onClick={() => handleDeleteScene(flatIndex)}
-                                            aria-label="장면 삭제"
+                                            onClick={() => handleDuplicateScene(flatIndex)}
+                                            aria-label="이 장면 복제"
                                           >
-                                            <Trash2 className="w-3 h-3 text-destructive" />
+                                            <CopyPlus className="w-3 h-3" />
                                           </Button>
                                         </TooltipTrigger>
-                                        <TooltipContent>이 장면 삭제</TooltipContent>
+                                        <TooltipContent>배치를 이어받아 복제</TooltipContent>
                                       </Tooltip>
-                                    )}
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 w-6 p-0"
+                                            onClick={() => handleExportJPG(flatIndex)}
+                                            aria-label="이미지로 저장"
+                                          >
+                                            <Image className="w-3 h-3" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>이미지(JPG)로 저장</TooltipContent>
+                                      </Tooltip>
+                                      {totalScenes > 1 && (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-6 w-6 p-0"
+                                              onClick={() => handleDeleteScene(flatIndex)}
+                                              aria-label="장면 삭제"
+                                            >
+                                              <Trash2 className="w-3 h-3 text-destructive" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>이 장면 삭제</TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
 
-                                <Textarea
-                                  value={scene.script}
-                                  onChange={(e) => handleScriptChange(flatIndex, e.target.value)}
-                                  onFocus={() => {
-                                    setActiveSection(flatIndex);
-                                    snapshot();
-                                  }}
-                                  placeholder="예: 패딩턴이 가방을 들고 무대 중앙으로 등장한다."
-                                  aria-label={`장면 ${sceneIdx + 1} 지문`}
-                                  className="mb-2 min-h-[44px] text-xs"
-                                />
+                                  <Textarea
+                                    value={scene.script}
+                                    onChange={(e) => handleScriptChange(flatIndex, e.target.value)}
+                                    onFocus={() => {
+                                      setActiveSection(flatIndex);
+                                      snapshot();
+                                    }}
+                                    placeholder="예: 패딩턴이 가방을 들고 무대 중앙으로 등장한다."
+                                    aria-label={`장면 ${sceneIdx + 1} 지문`}
+                                    className="mb-2 min-h-[44px] text-xs"
+                                  />
 
-                                <StageGrid
-                                  sectionIndex={flatIndex}
-                                  elements={scene.blockingElements}
-                                  onElementDrop={el.add}
-                                  onElementMove={el.move}
-                                  onElementRemove={el.remove}
-                                  onElementsRemove={el.removeMany}
-                                  onElementResize={el.resize}
-                                  onElementRotate={el.rotate}
-                                  onContextMenu={setContextMenu}
-                                  onMoveStart={snapshot}
-                                  onActivate={setActiveSection}
-                                  onSelectionChange={(element, sectionIndex) =>
-                                    setSelection((prev) =>
-                                      prev.element?.id === element?.id &&
-                                      prev.element?.color === element?.color &&
-                                      prev.sectionIndex === sectionIndex
-                                        ? prev
-                                        : { element, sectionIndex }
-                                    )
-                                  }
-                                  onElementActivate={(element, sectionIndex) => {
-                                    if (element.type === "text") {
-                                      setNoteDraft({ id: element.id, sectionIndex, value: element.text ?? "" });
+                                  <StageGrid
+                                    sectionIndex={flatIndex}
+                                    elements={scene.blockingElements}
+                                    onElementDrop={el.add}
+                                    onElementMove={el.move}
+                                    onElementRemove={el.remove}
+                                    onElementsRemove={el.removeMany}
+                                    onElementResize={el.resize}
+                                    onElementRotate={el.rotate}
+                                    onContextMenu={setContextMenu}
+                                    onMoveStart={snapshot}
+                                    onActivate={setActiveSection}
+                                    onSelectionChange={(element, sectionIndex) =>
+                                      setSelection((prev) =>
+                                        prev.element?.id === element?.id &&
+                                        prev.element?.color === element?.color &&
+                                        prev.sectionIndex === sectionIndex
+                                          ? prev
+                                          : { element, sectionIndex }
+                                      )
                                     }
-                                  }}
-                                  onMigrate={el.replaceAll}
-                                  drawing={
-                                    drawing?.sectionIndex === flatIndex
-                                      ? { color: drawing.color, label: drawing.label }
-                                      : null
-                                  }
-                                  onDrawFinish={handleDrawFinish}
-                                  onDrawCancel={() => setDrawing(null)}
-                                  showCenterGuides={showGuides}
-                                  orientation={orientation}
-                                  isActive={isActive}
-                                  compact={columns > 1}
-                                />
-                              </>
-                            )}
-                          </SortableCard>
-                        );
-                      })}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-              )}
-            </section>
-          ))}
+                                    onElementActivate={(element, sectionIndex) => {
+                                      if (element.type === "text") {
+                                        setNoteDraft({ id: element.id, sectionIndex, value: element.text ?? "" });
+                                      }
+                                    }}
+                                    onMigrate={el.replaceAll}
+                                    drawing={
+                                      drawing?.sectionIndex === flatIndex
+                                        ? { color: drawing.color, label: drawing.label }
+                                        : null
+                                    }
+                                    onDrawFinish={handleDrawFinish}
+                                    onDrawCancel={() => setDrawing(null)}
+                                    showCenterGuides={showGuides}
+                                    orientation={orientation}
+                                    isActive={isActive}
+                                    compact={columns > 1}
+                                  />
+                                </>
+                              )}
+                            </SortableCard>
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                )}
+              </section>
+            ))}
 
-          <Button variant="outline" onClick={handleAddGroup} className="w-full border-dashed border-2">
-            <FolderPlus className="w-4 h-4 mr-1" /> 장 추가
-          </Button>
+            <Button variant="outline" onClick={handleAddGroup} className="w-full border-dashed border-2">
+              <FolderPlus className="w-4 h-4 mr-1" /> 장 추가
+            </Button>
+          </div>
         </div>
       </main>
 
