@@ -20,7 +20,7 @@ const App = () => (
         </a>
         <Toaster />
         <Sonner />
-        <BrowserRouter basename="/musicalblockingnote">
+        <BrowserRouter>
           <Routes>
             <Route path="/" element={<MainPage />} />
             <Route path="/choreography" element={<ChoreographyPage />} />
